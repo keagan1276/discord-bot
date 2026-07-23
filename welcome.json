@@ -1,1 +1,7 @@
-{"1257004738340323379": {"channel": 1261885382065262673, "message": "welcome {user} to my {server}", "image": "https://images.pexels.com/photos/1519088/pexels-photo-1519088.jpeg?cs=srgb&dl=pexels-souvenirpixels-1519088.jpg&fm=jpg"}}
+{
+    "1257004738340323379": {
+        "channel": 1261885382065262673,
+        "message": "hi",
+        "image": null
+    }
+}

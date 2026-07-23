@@ -10,6 +10,20 @@ from math import floor
 from dotenv import load_dotenv
 load_dotenv()
 
+from flask import Flask
+from threading import Thread
+
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "Bot is running!"
+
+def run_web():
+    app.run(host="0.0.0.0", port=10000)
+
+Thread(target=run_web).start()
+
 print("BOT FILE STARTED")
 # ------------------- Bot Setup -------------------
 intents = discord.Intents.default()

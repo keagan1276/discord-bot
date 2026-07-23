@@ -22,5 +22,10 @@
         "wallet": 20000000,
         "bank": 0,
         "last_daily": null
+    },
+    "1528707648344686692": {
+        "wallet": 500,
+        "bank": 0,
+        "last_daily": null
     }
 }
