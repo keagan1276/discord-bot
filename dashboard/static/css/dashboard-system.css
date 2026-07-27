@@ -1741,32 +1741,38 @@ MOBILE SLIDE-OUT SIDEBAR
         20px 0 45px rgba(0,0,0,.55);
 
     }
+.sidebar-backdrop{
 
-    .app-sidebar.open{
+    position:fixed;
+    inset:0;
 
-        transform:translateX(0);
+    background:rgba(0,0,0,.45);
 
-    }
+    opacity:0;
+    visibility:hidden;
 
-    .sidebar-backdrop{
+    pointer-events:none;
 
-        position:fixed;
+    transition:.25s;
 
-        inset:0;
+    z-index:9998;
 
-        background:rgba(0,0,0,.55);
+}
 
-       backdrop-filter:none;
+.sidebar-backdrop.show{
 
-        opacity:0;
+    opacity:1;
+    visibility:visible;
 
-        visibility:hidden;
+    pointer-events:auto;
 
-        transition:.25s;
+}
 
-        z-index:4999;
+.app-sidebar{
 
-    }
+    z-index:9999;
+
+}
 
     .sidebar-backdrop.show{
 
