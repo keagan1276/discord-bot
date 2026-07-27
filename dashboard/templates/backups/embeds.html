@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Pirates Bot Dashboard</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+
+<div class="main">
+<h2>📜 Embed Builder</h2>
+
+<form method="POST">
+
+<label>Channel ID</label>
+<input name="channel_id" value="{{embed.channel_id}}">
+
+
+<label>Title</label>
+<input name="title" value="{{embed.title}}">
+
+
+<label>Description</label>
+<textarea name="description">{{embed.description}}</textarea>
+
+
+<label>Color</label>
+<input name="color" value="{{embed.color}}">
+
+
+<label>Footer</label>
+<input name="footer" value="{{embed.footer}}">
+
+
+<button>
+Save Embed
+</button>
+
+</form>
+<br>
+
+
+<a href="/" class="back-button">
+⬅ Back to Dashboard
+</a>
+
+
+</div>
+<script src="{{ url_for('static', filename='js/discord-selectors.js') }}"></script>
+
+</body>
+
+</html>

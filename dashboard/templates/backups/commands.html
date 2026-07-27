@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Pirates Bot Commands</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/style.css') }}"
+    >
+
+</head>
+
+
+<body>
+
+<div class="main">
+
+    <h2>⚔ Loaded Commands</h2>
+
+    <p class="subtitle">
+        Commands currently loaded by Pirates Bot.
+    </p>
+
+
+    <div class="settings-card">
+
+        <h3>⌨ Prefix Commands</h3>
+
+        {% if commands_data.prefix_commands %}
+
+            {% for command in commands_data.prefix_commands %}
+
+                <div class="command-entry">
+
+                    <strong>
+                        !{{ command.name }}
+                    </strong>
+
+                    <p>
+                        {{ command.description }}
+                    </p>
+
+                </div>
+
+            {% endfor %}
+
+        {% else %}
+
+            <p>No prefix commands loaded.</p>
+
+        {% endif %}
+
+    </div>
+
+
+    <div class="settings-card">
+
+        <h3>⚡ Slash Commands</h3>
+
+        {% if commands_data.slash_commands %}
+
+            {% for command in commands_data.slash_commands %}
+
+                <div class="command-entry">
+
+                    <strong>
+                        /{{ command.name }}
+                    </strong>
+
+                    <p>
+                        {{ command.description }}
+                    </p>
+
+                </div>
+
+            {% endfor %}
+
+        {% else %}
+
+            <p>No slash commands loaded.</p>
+
+        {% endif %}
+
+    </div>
+
+
+    <a
+        href="/"
+        class="back-button"
+    >
+        ⬅ Back to Dashboard
+    </a>
+
+</div>
+<script src="{{ url_for('static', filename='js/discord-selectors.js') }}"></script>
+</body>
+
+</html>

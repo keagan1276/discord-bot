@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Owner Panel | Pirates Bot</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard-home.css') }}">
+    <style>
+        body { margin:0; min-height:100vh; background:#080a0c; color:#fff; font-family:Inter,Arial,sans-serif; }
+        .owner-shell { max-width:1050px; margin:auto; padding:50px 24px; }
+        .owner-card { padding:25px; border:1px solid rgba(255,255,255,.1); border-radius:16px; background:#111417; margin-top:18px; }
+        .owner-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:14px; }
+        .metric { padding:20px; border-radius:12px; background:#171b1f; border:1px solid rgba(255,255,255,.08); }
+        .metric strong { display:block; margin-top:8px; font-size:28px; }
+        a { color:#e5bd72; }
+    </style>
+</head>
+<body>
+<main class="owner-shell">
+    <a href="/servers">← Back to servers</a>
+    <p style="color:#dba23f;margin-top:30px;">PRIVATE CAPTAIN'S QUARTERS</p>
+    <h1>Bot Owner Panel</h1>
+    <p>Only the Discord account listed as BOT_OWNER_ID can open this page.</p>
+
+    <section class="owner-card owner-grid">
+        <div class="metric">Status<strong>{{ "Online" if bot_status.online else "Offline" }}</strong></div>
+        <div class="metric">Servers<strong>{{ bot_status.servers or 0 }}</strong></div>
+        <div class="metric">Members<strong>{{ bot_status.members or 0 }}</strong></div>
+        <div class="metric">Commands<strong>{{ commands_data.total or 0 }}</strong></div>
+    </section>
+
+    <section class="owner-card">
+        <h2>Global settings</h2>
+        <p>Branding and global bot controls remain protected behind your Discord user ID.</p>
+        <a href="/settings">Open owner-only settings</a>
+    </section>
+</main>
+</body>
+</html>

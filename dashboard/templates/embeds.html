@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Embeds | Pirates Bot{% endblock %}
+{% block page_name %}Embeds{% endblock %}
+{% block eyebrow %}MESSAGE FORGE{% endblock %}
+{% block heading %}Embed Builder{% endblock %}
+{% block description %}Design rich Discord embeds with colours, images, thumbnails, and live preview.{% endblock %}
+{% block content %}
+<form method="POST" class="settings-form">
+<div class="editor-grid">
+    <section class="panel">
+        <div class="panel-heading"><div><span class="panel-icon">🖋</span><h2>Embed Content</h2></div><label class="switch"><input type="checkbox" name="enabled" {% if embed.enabled %}checked{% endif %}><span></span></label></div>
+        <div class="form-group"><label>Channel</label><input name="channel_id" value="{{ embed.channel_id }}" placeholder="Choose a channel"></div>
+        <div class="form-group"><label>Title</label><input name="title" value="{{ embed.title }}" data-preview-source="embed_title"></div>
+        <div class="form-group"><label>Description</label><textarea name="description" data-preview-source="embed_description">{{ embed.description }}</textarea></div>
+        <div class="form-row">
+            <div class="form-group"><label>Colour</label><input type="color" name="color" value="{{ embed.color or '#ff0000' }}"></div>
+            <div class="form-group"><label>Footer</label><input name="footer" value="{{ embed.footer }}" data-preview-source="embed_footer"></div>
+        </div>
+        <div class="form-group"><label>Thumbnail URL</label><input type="url" name="thumbnail" value="{{ embed.thumbnail }}"></div>
+        <div class="form-group"><label>Image URL</label><input type="url" name="image" value="{{ embed.image }}"></div>
+    </section>
+
+    <aside class="preview-card sticky">
+        <div class="preview-label">LIVE EMBED PREVIEW</div>
+        <div class="discord-message">
+            <div class="discord-avatar">☠️</div>
+            <div class="discord-body">
+                <div><strong>Pirates Bot</strong> <span class="bot-tag">BOT</span></div>
+                <div class="discord-embed">
+                    <h3 data-preview-target="embed_title">{{ embed.title or "Embed title" }}</h3>
+                    <p data-preview-target="embed_description">{{ embed.description or "Your embed description will appear here." }}</p>
+                    {% if embed.image %}<img src="{{ embed.image }}" alt="Embed image">{% endif %}
+                    <small data-preview-target="embed_footer">{{ embed.footer }}</small>
+                </div>
+            </div>
+        </div>
+    </aside>
+</div>
+<div class="save-bar"><span>Saving publishes or updates this embed.</span><button class="primary-button" type="submit">Save and Publish</button></div>
+</form>
+{% endblock %}

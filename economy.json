@@ -1,0 +1,44 @@
+{
+    "work": {
+        "min_reward": 10,
+        "max_reward": 100,
+        "cooldown": 600
+    },
+    "crime": {
+        "success_chance": 50,
+        "min_reward": 50,
+        "max_reward": 250,
+        "fail_loss": 50,
+        "cooldown": 900
+    },
+    "rob": {
+        "success_chance": 40,
+        "min_reward": 10,
+        "max_reward": 100,
+        "fail_loss": 50,
+        "cooldown": 900
+    },
+    "blackjack": {
+        "min_bet": 10,
+        "max_bet": 1000,
+        "cooldown": 45
+    },
+    "roulette": {
+        "min_bet": 10,
+        "max_bet": 1000,
+        "cooldown": 60
+    },
+    "daily": {
+        "reward": 500,
+        "cooldown": 86400
+    },
+    "weekly": {
+        "reward": 2500,
+        "cooldown": 604800
+    },
+    "bank": {
+        "max_storage": 1000000,
+        "interest_rate": 0,
+        "interest_cooldown": 86400
+    }
+}

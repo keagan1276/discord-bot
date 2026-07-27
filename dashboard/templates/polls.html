@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Polls | Pirates Bot{% endblock %}
+{% block page_name %}Polls{% endblock %}
+{% block eyebrow %}CREW DECISIONS{% endblock %}
+{% block heading %}Poll Builder{% endblock %}
+{% block description %}Create a yes-or-no poll and publish it directly into a Discord channel.{% endblock %}
+{% block content %}
+{% if request.args.get('published') %}<div class="alert success">✅ Poll published in Discord.</div>{% endif %}
+{% if publish_error %}<div class="alert" style="border:1px solid #8f3030;color:#ffb0b0;background:#351515;">❌ {{ publish_error }}</div>{% endif %}
+<form method="POST" class="settings-form">
+<div class="editor-grid">
+<section class="panel">
+<div class="panel-heading"><div><span class="panel-icon">📊</span><h2>Poll Settings</h2></div></div>
+<div class="form-group"><label>Discord channel</label><p class="help">Choose where the poll will be published.</p><input name="channel_id" value="{{ poll.get('channel_id','') }}" placeholder="Choose a channel" required></div>
+<div class="form-group"><label>Embed title</label><input name="title" value="{{ poll.get('title','📊 Poll') }}" data-preview-source="poll_title"></div>
+<div class="form-group"><label>Question</label><textarea name="question" data-preview-source="poll_question" required>{{ poll.get('question','') }}</textarea></div>
+<div class="form-row"><div class="form-group"><label>Colour</label><input type="color" name="color" value="{{ poll.get('color','#5865F2') }}"></div><div class="form-group"><label>Footer</label><input name="footer" value="{{ poll.get('footer','') }}"></div></div>
+</section>
+<aside class="preview-card sticky"><div class="preview-label">LIVE POLL PREVIEW</div><div class="discord-message"><div class="discord-avatar">☠️</div><div class="discord-body"><div><strong>Pirates Bot</strong> <span class="bot-tag">BOT</span></div><div class="discord-embed"><h3 data-preview-target="poll_title">{{ poll.get('title','📊 Poll') }}</h3><p data-preview-target="poll_question">{{ poll.get('question') or 'Should we set sail?' }}</p><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div>✅ Yes<br><strong>0</strong></div><div>❌ No<br><strong>0</strong></div></div></div><button class="discord-button" type="button">✅ Yes</button> <button class="discord-button" type="button">❌ No</button></div></div></aside>
+</div>
+<div class="save-bar"><span>Publishing creates a new poll in Discord.</span><button class="primary-button" type="submit">Publish Poll</button></div>
+</form>
+{% endblock %}

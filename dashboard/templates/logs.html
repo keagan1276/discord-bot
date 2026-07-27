@@ -1,0 +1,957 @@
+{% extends "base.html" %}
+
+{% block title %}
+Logs | Pirates Bot
+{% endblock %}
+
+{% block page_name %}
+Logs
+{% endblock %}
+
+{% block eyebrow %}
+SERVER HISTORY
+{% endblock %}
+
+{% block heading %}
+📚 Logs
+{% endblock %}
+
+{% block description %}
+Search and review recorded activity for the selected Discord server.
+{% endblock %}
+
+{% block head %}
+<style>
+    .logs-toolbar {
+        display: grid;
+        grid-template-columns:
+            minmax(0, 1fr)
+            220px
+            auto;
+        gap: 10px;
+        margin-bottom: 18px;
+    }
+
+    .logs-search {
+        min-width: 0;
+    }
+
+    .logs-summary {
+        display: grid;
+        grid-template-columns:
+            repeat(4, minmax(0, 1fr));
+        gap: 12px;
+        margin-bottom: 18px;
+    }
+
+    .log-summary-card {
+        padding: 15px;
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        background: #0d1013;
+    }
+
+    .log-summary-card span,
+    .log-summary-card strong {
+        display: block;
+    }
+
+    .log-summary-card span {
+        color: var(--muted);
+        font-size: 9px;
+        letter-spacing: 0.6px;
+        text-transform: uppercase;
+    }
+
+    .log-summary-card strong {
+        margin-top: 7px;
+        font-size: 22px;
+    }
+
+    .logs-list {
+        display: grid;
+        gap: 12px;
+    }
+
+    .log-card {
+        position: relative;
+        overflow: hidden;
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #0d1013;
+    }
+
+    .log-card[hidden] {
+        display: none;
+    }
+
+    .log-card::before {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 4px;
+        background: #6f7780;
+        content: "";
+    }
+
+    .log-card.message-delete::before {
+        background: #c84747;
+    }
+
+    .log-card.message-edit::before {
+        background: #d5a248;
+    }
+
+    .log-card.member-join::before {
+        background: #36cf68;
+    }
+
+    .log-card.member-leave::before {
+        background: #d55a5a;
+    }
+
+    .log-card.nickname-change::before {
+        background: #5865f2;
+    }
+
+    .log-card-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 14px;
+    }
+
+    .log-card-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+    }
+
+    .log-icon {
+        display: grid;
+        place-items: center;
+        width: 36px;
+        height: 36px;
+        flex: 0 0 36px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: rgba(255, 255, 255, 0.035);
+        font-size: 17px;
+    }
+
+    .log-card-title strong,
+    .log-card-title small {
+        display: block;
+    }
+
+    .log-card-title strong {
+        font-size: 12px;
+    }
+
+    .log-card-title small {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 9px;
+    }
+
+    .log-time {
+        flex: 0 0 auto;
+        color: var(--muted);
+        font-size: 9px;
+        text-align: right;
+    }
+
+    .log-content {
+        margin-top: 14px;
+        padding-left: 46px;
+    }
+
+    .log-meta-grid {
+        display: grid;
+        grid-template-columns:
+            repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin-bottom: 12px;
+    }
+
+    .log-meta-item {
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.02);
+    }
+
+    .log-meta-item span,
+    .log-meta-item strong {
+        display: block;
+    }
+
+    .log-meta-item span {
+        color: var(--muted);
+        font-size: 8px;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+    }
+
+    .log-meta-item strong {
+        margin-top: 4px;
+        overflow: hidden;
+        font-size: 10px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .log-message-box {
+        margin-top: 9px;
+        padding: 12px;
+        overflow-wrap: anywhere;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.022);
+        color: #d9dcdf;
+        white-space: pre-wrap;
+        font-size: 10px;
+        line-height: 1.6;
+    }
+
+    .log-message-label {
+        display: block;
+        margin-bottom: 6px;
+        color: var(--muted);
+        font-size: 8px;
+        font-weight: 800;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+    }
+
+    .log-before {
+        border-left: 3px solid #d5a248;
+    }
+
+    .log-after {
+        border-left: 3px solid #36cf68;
+    }
+
+    .log-deleted {
+        border-left: 3px solid #c84747;
+    }
+
+    .log-attachments {
+        display: grid;
+        gap: 6px;
+        margin-top: 10px;
+    }
+
+    .log-attachment {
+        display: block;
+        overflow: hidden;
+        color: #9eb6ff;
+        font-size: 9px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .log-jump-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 10px;
+        padding: 7px 10px;
+        border: 1px solid rgba(88, 101, 242, 0.3);
+        border-radius: 7px;
+        background: rgba(88, 101, 242, 0.1);
+        color: #bdc6ff;
+        font-size: 9px;
+        text-decoration: none;
+    }
+
+    .log-jump-link:hover {
+        color: #ffffff;
+    }
+
+    .logs-empty {
+        padding: 42px 20px;
+        border: 1px dashed var(--line);
+        border-radius: 12px;
+        color: var(--muted);
+        text-align: center;
+    }
+
+    .logs-empty span {
+        display: block;
+        margin-bottom: 10px;
+        font-size: 34px;
+    }
+
+    .logs-empty strong {
+        display: block;
+        margin-bottom: 6px;
+        color: #ffffff;
+        font-size: 13px;
+    }
+
+    .logs-empty p {
+        margin: 0;
+        font-size: 10px;
+        line-height: 1.7;
+    }
+
+    .clear-logs-form {
+        margin: 0;
+    }
+
+    .clear-logs-button {
+        height: 100%;
+        white-space: nowrap;
+    }
+
+    .logs-result-count {
+        margin-bottom: 12px;
+        color: var(--muted);
+        font-size: 10px;
+    }
+
+    @media (max-width: 900px) {
+        .logs-summary {
+            grid-template-columns:
+                repeat(2, minmax(0, 1fr));
+        }
+
+        .logs-toolbar {
+            grid-template-columns: 1fr;
+        }
+
+        .clear-logs-button {
+            width: 100%;
+        }
+    }
+
+    @media (max-width: 600px) {
+        .logs-summary,
+        .log-meta-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .log-content {
+            padding-left: 0;
+        }
+
+        .log-card-header {
+            align-items: flex-start;
+            flex-direction: column;
+        }
+
+        .log-time {
+            text-align: left;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="panel">
+
+    <div class="panel-heading">
+        <div>
+            <span class="panel-icon">📚</span>
+            <h2>Server activity</h2>
+        </div>
+
+        <span class="pill">
+            {{ logs|length }} recorded
+        </span>
+    </div>
+
+    <div class="logs-summary">
+
+        <article class="log-summary-card">
+            <span>Total logs</span>
+            <strong>{{ logs|length }}</strong>
+        </article>
+
+        <article class="log-summary-card">
+            <span>Deleted messages</span>
+            <strong>
+                {{ logs|selectattr("type", "equalto", "message_delete")|list|length }}
+            </strong>
+        </article>
+
+        <article class="log-summary-card">
+            <span>Edited messages</span>
+            <strong>
+                {{ logs|selectattr("type", "equalto", "message_edit")|list|length }}
+            </strong>
+        </article>
+
+        <article class="log-summary-card">
+    <span>Member events</span>
+
+    <strong>
+        {{
+            (
+                logs
+                | selectattr("type", "equalto", "member_join")
+                | list
+                | length
+            )
+            +
+            (
+                logs
+                | selectattr("type", "equalto", "member_leave")
+                | list
+                | length
+            )
+            +
+            (
+                logs
+                | selectattr("type", "equalto", "nickname_change")
+                | list
+                | length
+            )
+        }}
+    </strong>
+</article>
+
+    </div>
+
+    <div class="logs-toolbar">
+
+        <input
+            class="logs-search"
+            id="logs-search"
+            type="search"
+            placeholder="🔍 Search users, channels or messages..."
+            autocomplete="off"
+        >
+
+        <select id="logs-filter">
+            <option value="all">
+                All log types
+            </option>
+
+            <option value="message_delete">
+                Deleted messages
+            </option>
+
+            <option value="message_edit">
+                Edited messages
+            </option>
+
+            <option value="member_join">
+                Member joins
+            </option>
+
+            <option value="member_leave">
+                Member leaves
+            </option>
+
+            <option value="nickname_change">
+                Nickname changes
+            </option>
+        </select>
+
+        <form
+            method="POST"
+            action="{{ url_for('logs') }}"
+            class="clear-logs-form"
+            onsubmit="return confirm('Clear every saved log for this server? This cannot be undone.');"
+        >
+            <input
+                type="hidden"
+                name="action"
+                value="clear"
+            >
+
+            <button
+                type="submit"
+                class="danger-button clear-logs-button"
+            >
+                🗑 Clear Logs
+            </button>
+        </form>
+
+    </div>
+
+    <div
+        class="logs-result-count"
+        id="logs-result-count"
+    >
+        Showing {{ logs|length }} logs
+    </div>
+
+    {% if logs %}
+
+    <div
+        class="logs-list"
+        id="logs-list"
+    >
+
+        {% for log in logs %}
+
+        {% set log_type = log.get("type", "unknown") %}
+        {% set data = log.get("data", {}) %}
+
+        <article
+            class="log-card {{ log_type|replace('_', '-') }}"
+            data-log-type="{{ log_type }}"
+            data-search-text="
+                {{ log_type }}
+                {{ data.get('user_name', '') }}
+                {{ data.get('display_name', '') }}
+                {{ data.get('channel_name', '') }}
+                {{ data.get('message', '') }}
+                {{ data.get('before', '') }}
+                {{ data.get('after', '') }}
+            "
+            data-timestamp="{{ log.get('timestamp', 0) }}"
+        >
+
+            <div class="log-card-header">
+
+                <div class="log-card-title">
+
+                    <span class="log-icon">
+                        {% if log_type == "message_delete" %}
+                            🗑️
+                        {% elif log_type == "message_edit" %}
+                            ✏️
+                        {% elif log_type == "member_join" %}
+                            📥
+                        {% elif log_type == "member_leave" %}
+                            📤
+                        {% elif log_type == "nickname_change" %}
+                            🪪
+                        {% else %}
+                            📚
+                        {% endif %}
+                    </span>
+
+                    <div>
+                        <strong>
+                            {% if log_type == "message_delete" %}
+                                Message Deleted
+                            {% elif log_type == "message_edit" %}
+                                Message Edited
+                            {% elif log_type == "member_join" %}
+                                Member Joined
+                            {% elif log_type == "member_leave" %}
+                                Member Left
+                            {% elif log_type == "nickname_change" %}
+                                Nickname Changed
+                            {% else %}
+                                {{ log_type|replace("_", " ")|title }}
+                            {% endif %}
+                        </strong>
+
+                        <small>
+                            Log ID: {{ log.get("id", "Unknown") }}
+                        </small>
+                    </div>
+
+                </div>
+
+                <div
+                    class="log-time"
+                    data-log-time
+                >
+                    Calculating...
+                </div>
+
+            </div>
+
+            <div class="log-content">
+
+                {% if data.get("user_id") or data.get("channel_id") %}
+
+                <div class="log-meta-grid">
+
+                    {% if data.get("display_name") or data.get("user_name") %}
+
+                    <div class="log-meta-item">
+                        <span>User</span>
+
+                        <strong>
+                            {{ data.get("display_name") or data.get("user_name") }}
+                        </strong>
+                    </div>
+
+                    {% endif %}
+
+                    {% if data.get("user_id") %}
+
+                    <div class="log-meta-item">
+                        <span>User ID</span>
+
+                        <strong>
+                            {{ data.get("user_id") }}
+                        </strong>
+                    </div>
+
+                    {% endif %}
+
+                    {% if data.get("channel_name") %}
+
+                    <div class="log-meta-item">
+                        <span>Channel</span>
+
+                        <strong>
+                            #{{ data.get("channel_name") }}
+                        </strong>
+                    </div>
+
+                    {% endif %}
+
+                    {% if data.get("channel_id") %}
+
+                    <div class="log-meta-item">
+                        <span>Channel ID</span>
+
+                        <strong>
+                            {{ data.get("channel_id") }}
+                        </strong>
+                    </div>
+
+                    {% endif %}
+
+                </div>
+
+                {% endif %}
+
+                {% if log_type == "message_delete" %}
+
+                <div class="log-message-box log-deleted">
+                    <span class="log-message-label">
+                        Deleted content
+                    </span>
+
+                    {{ data.get("message") or "No text content." }}
+                </div>
+
+                {% if data.get("attachments") %}
+
+                <div class="log-attachments">
+
+                    {% for attachment in data.get("attachments", []) %}
+
+                    <a
+                        class="log-attachment"
+                        href="{{ attachment }}"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    >
+                        📎 {{ attachment }}
+                    </a>
+
+                    {% endfor %}
+
+                </div>
+
+                {% endif %}
+
+                {% elif log_type == "message_edit" %}
+
+                <div class="log-message-box log-before">
+                    <span class="log-message-label">
+                        Before
+                    </span>
+
+                    {{ data.get("before") or "No text content." }}
+                </div>
+
+                <div class="log-message-box log-after">
+                    <span class="log-message-label">
+                        After
+                    </span>
+
+                    {{ data.get("after") or "No text content." }}
+                </div>
+
+                {% if data.get("jump_url") %}
+
+                <a
+                    class="log-jump-link"
+                    href="{{ data.get('jump_url') }}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                >
+                    ↗ Open message in Discord
+                </a>
+
+                {% endif %}
+
+                {% elif log_type == "member_join" %}
+
+                <div class="log-meta-grid">
+
+                    <div class="log-meta-item">
+                        <span>Account type</span>
+
+                        <strong>
+                            {{ "Bot" if data.get("bot") else "Member" }}
+                        </strong>
+                    </div>
+
+                    <div class="log-meta-item">
+                        <span>Account created</span>
+
+                        <strong>
+                            {{ data.get("created_at", "Unknown") }}
+                        </strong>
+                    </div>
+
+                </div>
+
+                {% elif log_type == "member_leave" %}
+
+                <div class="log-meta-grid">
+
+                    <div class="log-meta-item">
+                        <span>Account type</span>
+
+                        <strong>
+                            {{ "Bot" if data.get("bot") else "Member" }}
+                        </strong>
+                    </div>
+
+                    <div class="log-meta-item">
+                        <span>Originally joined</span>
+
+                        <strong>
+                            {{ data.get("joined_at", "Unknown") }}
+                        </strong>
+                    </div>
+
+                </div>
+
+                {% elif log_type == "nickname_change" %}
+
+                <div class="log-message-box log-before">
+                    <span class="log-message-label">
+                        Previous nickname
+                    </span>
+
+                    {{ data.get("before", "Unknown") }}
+                </div>
+
+                <div class="log-message-box log-after">
+                    <span class="log-message-label">
+                        New nickname
+                    </span>
+
+                    {{ data.get("after", "Unknown") }}
+                </div>
+
+                {% else %}
+
+                <div class="log-message-box">
+                    <span class="log-message-label">
+                        Raw log data
+                    </span>
+
+                    {{ data }}
+                </div>
+
+                {% endif %}
+
+            </div>
+
+        </article>
+
+        {% endfor %}
+
+    </div>
+
+    <div
+        class="logs-empty"
+        id="filtered-empty"
+        hidden
+    >
+        <span>🔍</span>
+
+        <strong>No matching logs</strong>
+
+        <p>
+            Try changing the search text or selected log type.
+        </p>
+    </div>
+
+    {% else %}
+
+    <div class="logs-empty">
+        <span>📚</span>
+
+        <strong>No logs recorded yet</strong>
+
+        <p>
+            Edit or delete a Discord message to test the logging system.
+        </p>
+    </div>
+
+    {% endif %}
+
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener(
+    "DOMContentLoaded",
+    () => {
+        const searchInput = document.getElementById(
+            "logs-search"
+        );
+
+        const filterSelect = document.getElementById(
+            "logs-filter"
+        );
+
+        const resultCount = document.getElementById(
+            "logs-result-count"
+        );
+
+        const emptyState = document.getElementById(
+            "filtered-empty"
+        );
+
+        const logCards = Array.from(
+            document.querySelectorAll(
+                ".log-card"
+            )
+        );
+
+        function formatLogTime(timestamp) {
+            const date = new Date(
+                Number(timestamp) * 1000
+            );
+
+            if (
+                Number.isNaN(
+                    date.getTime()
+                )
+            ) {
+                return "Unknown time";
+            }
+
+            const now = new Date();
+
+            const seconds = Math.floor(
+                (now.getTime() - date.getTime())
+                / 1000
+            );
+
+            if (seconds < 10) {
+                return "Just now";
+            }
+
+            if (seconds < 60) {
+                return `${seconds} seconds ago`;
+            }
+
+            const minutes = Math.floor(
+                seconds / 60
+            );
+
+            if (minutes < 60) {
+                return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+            }
+
+            const hours = Math.floor(
+                minutes / 60
+            );
+
+            if (hours < 24) {
+                return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+            }
+
+            return date.toLocaleString();
+        }
+
+        function updateTimes() {
+            logCards.forEach(
+                card => {
+                    const timeElement = card.querySelector(
+                        "[data-log-time]"
+                    );
+
+                    if (!timeElement) {
+                        return;
+                    }
+
+                    timeElement.textContent = formatLogTime(
+                        card.dataset.timestamp
+                    );
+                }
+            );
+        }
+
+        function filterLogs() {
+            const searchValue = searchInput.value
+                .trim()
+                .toLowerCase();
+
+            const selectedType = filterSelect.value;
+
+            let visibleCount = 0;
+
+            logCards.forEach(
+                card => {
+                    const typeMatches = (
+                        selectedType === "all"
+                        || card.dataset.logType
+                        === selectedType
+                    );
+
+                    const textMatches = (
+                        !searchValue
+                        || card.dataset.searchText
+                            .toLowerCase()
+                            .includes(searchValue)
+                    );
+
+                    const shouldShow = (
+                        typeMatches
+                        && textMatches
+                    );
+
+                    card.hidden = !shouldShow;
+
+                    if (shouldShow) {
+                        visibleCount += 1;
+                    }
+                }
+            );
+
+            resultCount.textContent = (
+                `Showing ${visibleCount} log`
+                + `${visibleCount === 1 ? "" : "s"}`
+            );
+
+            if (emptyState) {
+                emptyState.hidden = (
+                    visibleCount !== 0
+                );
+            }
+        }
+
+        searchInput.addEventListener(
+            "input",
+            filterLogs
+        );
+
+        filterSelect.addEventListener(
+            "change",
+            filterLogs
+        );
+
+        updateTimes();
+        filterLogs();
+
+        window.setInterval(
+            updateTimes,
+            30000
+        );
+    }
+);
+</script>
+{% endblock %}

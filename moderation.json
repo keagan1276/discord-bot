@@ -1,0 +1,32 @@
+{
+    "guilds": {
+        "1257004738340323379": {
+            "enabled": true,
+            "log_channel": "1418433112752263289",
+            "automod": {
+                "enabled": true,
+                "anti_spam": true,
+                "word_filter": true,
+                "anti_discord_links": true,
+                "banned_words": [],
+                "allowed_discord_invites": []
+            },
+            "warnings": {
+                "enabled": true,
+                "max_warnings": 3
+            },
+            "kick": {
+                "enabled": true
+            },
+            "ban": {
+                "enabled": true
+            },
+            "mute": {
+                "enabled": true,
+                "duration": 600
+            },
+            "status_message_id": "1530359410201727268",
+            "guild_id": "1257004738340323379"
+        }
+    }
+}

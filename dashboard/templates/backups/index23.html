@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pirates Bot Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard-home.css') }}">
+</head>
+<body class="dashboard-body">
+
+<aside class="sidebar">
+    <a class="brand" href="/">
+        <div class="brand-mark">☠️</div>
+        <div class="brand-name">PIRATES BOT</div>
+    </a>
+
+    <nav class="sidebar-nav">
+        <a class="nav-link active" href="/"><span></span> Dashboard</a>
+        <a class="nav-link" href="/commands"><span>⌁</span> Commands</a>
+        <a class="nav-link" href="/welcome"><span>👋</span> Welcome</a>
+        <a class="nav-link" href="/tickets"><span>🎟</span> Tickets</a>
+        <a class="nav-link" href="/rules"><span>📜</span> Rules Menu</a>
+        <a class="nav-link" href="/reaction-roles"><span>🙂</span> Reaction Roles</a>
+        <a class="nav-link" href="/moderation"><span>🛡</span> Moderation</a>
+        <a class="nav-link" href="/embeds"><span>🖋</span> Embeds</a>
+        <a class="nav-link" href="/economy"><span>🪙</span> Economy</a>
+        <a class="nav-link" href="/settings"><span>⚙</span> Settings</a>
+    </nav>
+
+    <div class="sidebar-footer">
+        <div class="mini-skull">☠️</div>
+        <strong>PIRATES BOT</strong>
+        <small>Rule the server.<br>Command the seas.</small>
+    </div>
+</aside>
+
+<main class="dashboard-shell">
+    <section class="hero-banner">
+        <img src="{{ url_for('static', filename='images/pirates-bot-banner.png') }}"
+             alt="Pirates Bot banner">
+        <div class="hero-shade"></div>
+    </section>
+
+    <section class="dashboard-content">
+        <div class="page-heading">
+            <div>
+                <h2>☠ Welcome back, Captain!</h2>
+                <p>Here's what's happening on your ship today.</p>
+            </div>
+            <button class="icon-button" type="button" onclick="window.location.reload()" title="Refresh">↻</button>
+        </div>
+
+        <div class="dashboard-grid">
+            <div class="main-column">
+                <section class="stats-grid">
+                    <article class="stat-card">
+                        <div class="stat-icon red">👥</div>
+                        <div>
+                            <span>Servers</span>
+                            <strong>{{ bot_status.servers }}</strong>
+                            <small>Connected guilds</small>
+                        </div>
+                    </article>
+
+                    <article class="stat-card">
+                        <div class="stat-icon gold">👤</div>
+                        <div>
+                            <span>Members</span>
+                            <strong>{{ "{:,}".format(bot_status.members) }}</strong>
+                            <small>Across all servers</small>
+                        </div>
+                    </article>
+
+                    <article class="stat-card">
+                        <div class="stat-icon blue">&lt;/&gt;</div>
+                        <div>
+                            <span>Commands</span>
+                            <strong>{{ commands_data.total }}</strong>
+                            <small>
+                                {{ commands_data.prefix_commands|length }} Prefix
+                                · {{ commands_data.slash_commands|length }} Slash
+                            </small>
+                        </div>
+                    </article>
+
+                    <article class="stat-card">
+                        <div class="stat-icon green">〽</div>
+                        <div>
+                            <span>Latency</span>
+                            <strong>{{ bot_status.latency_ms }}ms</strong>
+                            <small>
+                                {% if bot_status.latency_ms and bot_status.latency_ms < 100 %}
+                                    Excellent
+                                {% else %}
+                                    Connected
+                                {% endif %}
+                            </small>
+                        </div>
+                    </article>
+                </section>
+
+                <section class="lower-grid">
+                    <article class="panel activity-panel">
+                        <div class="panel-title">
+                            <h3>Recent Activity</h3>
+                            <span>Live dashboard</span>
+                        </div>
+
+                        <div class="activity-row">
+                            <span class="activity-icon">🎉</span>
+                            <div>
+                                <strong>Welcome system</strong>
+                                <small>Manage automated greetings and direct messages.</small>
+                            </div>
+                            <a href="/welcome">Open</a>
+                        </div>
+
+                        <div class="activity-row">
+                            <span class="activity-icon">🎟</span>
+                            <div>
+                                <strong>Ticket system</strong>
+                                <small>Create and update your support panel.</small>
+                            </div>
+                            <a href="/tickets">Open</a>
+                        </div>
+
+                        <div class="activity-row">
+                            <span class="activity-icon">📜</span>
+                            <div>
+                                <strong>Rules menu</strong>
+                                <small>Edit sections, images, buttons and posting channel.</small>
+                            </div>
+                            <a href="/rules">Open</a>
+                        </div>
+
+                        <div class="activity-row">
+                            <span class="activity-icon">🙂</span>
+                            <div>
+                                <strong>Reaction roles</strong>
+                                <small>Connect emojis to Discord roles.</small>
+                            </div>
+                            <a href="/reaction-roles">Open</a>
+                        </div>
+
+                        <div class="activity-row">
+                            <span class="activity-icon status-dot"></span>
+                            <div>
+                                <strong>Bot status</strong>
+                                <small>
+                                    {% if bot_status.online %}
+                                        Pirates Bot is online and connected.
+                                    {% else %}
+                                        Pirates Bot is currently offline.
+                                    {% endif %}
+                                </small>
+                            </div>
+                            <span class="activity-time">Now</span>
+                        </div>
+                    </article>
+
+                    <article class="panel feature-panel">
+                        <div class="panel-title">
+                            <h3>Feature Status</h3>
+                            <span>Controls</span>
+                        </div>
+
+                        <a class="feature-row" href="/welcome"><span>🎉 Welcome</span><b>Active</b></a>
+                        <a class="feature-row" href="/tickets"><span>🎟 Tickets</span><b>Active</b></a>
+                        <a class="feature-row" href="/rules"><span>📜 Rules Menu</span><b>Active</b></a>
+                        <a class="feature-row" href="/reaction-roles"><span>🙂 Reaction Roles</span><b>Active</b></a>
+                        <a class="feature-row" href="/moderation"><span>🛡 Moderation</span><b>Active</b></a>
+                        <a class="feature-row" href="/embeds"><span>🖋 Embeds</span><b>Active</b></a>
+                        <a class="feature-row" href="/economy"><span>💰 Economy</span><b>Active</b></a>
+                    </article>
+                </section>
+            </div>
+
+            <aside class="right-column">
+                <article class="panel bot-card">
+                    <div class="bot-card-heading">
+                        <h3><span class="status-light"></span> Bot Status</h3>
+                        <strong class="{{ 'online-text' if bot_status.online else 'offline-text' }}">
+                            {{ 'Online' if bot_status.online else 'Offline' }}
+                        </strong>
+                    </div>
+
+                    <div class="bot-avatar">☠️</div>
+                    <h3>{{ bot_status.bot_name }}</h3>
+                    <p>
+                        {% if bot_status.get('bot_id') %}
+                            ID: {{ bot_status.bot_id }}
+                        {% else %}
+                            Waiting for Discord connection
+                        {% endif %}
+                    </p>
+                </article>
+
+                <article class="panel quick-actions">
+                    <h3>Quick Actions</h3>
+                    <a class="action-button red-action" href="/commands">↻ View Commands</a>
+                    <a class="action-button gold-action" href="/rules">☠ Edit Rules Menu</a>
+                    <a class="action-button dark-action" href="/settings">⚙ Bot Settings</a>
+                </article>
+            </aside>
+        </div>
+    </section>
+</main>
+
+<script>
+setTimeout(() => window.location.reload(), 30000);
+</script>
+</body>
+</html>

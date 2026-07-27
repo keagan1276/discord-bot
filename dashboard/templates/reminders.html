@@ -1,0 +1,432 @@
+{% extends "base.html" %}
+
+{% block title %}
+Reminders | Pirates Bot
+{% endblock %}
+
+{% block page_name %}
+Reminders
+{% endblock %}
+
+{% block eyebrow %}
+PERSONAL AUTOMATION
+{% endblock %}
+
+{% block heading %}
+⏰ Reminders
+{% endblock %}
+
+{% block description %}
+View active reminders created by members in the selected Discord server.
+{% endblock %}
+
+{% block head %}
+
+<style>
+    .reminders-grid {
+        display: grid;
+        grid-template-columns:
+            repeat(
+                2,
+                minmax(0, 1fr)
+            );
+        gap: 14px;
+    }
+
+    .reminder-card {
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #0d1013;
+    }
+
+    .reminder-card-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
+    .reminder-card-header strong,
+    .reminder-card-header small {
+        display: block;
+    }
+
+    .reminder-card-header strong {
+        font-size: 12px;
+    }
+
+    .reminder-card-header small {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 9px;
+    }
+
+    .reminder-status {
+        flex: 0 0 auto;
+        padding: 5px 8px;
+        border: 1px solid rgba(54, 207, 104, 0.25);
+        border-radius: 999px;
+        background: rgba(54, 207, 104, 0.09);
+        color: #aef0bf;
+        font-size: 8px;
+        font-weight: 800;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+    }
+
+    .reminder-message {
+        margin: 14px 0;
+        padding: 12px;
+        overflow-wrap: anywhere;
+        border-left: 3px solid var(--gold);
+        border-radius: 7px;
+        background: rgba(255, 255, 255, 0.025);
+        color: #d7d9dc;
+        white-space: pre-wrap;
+        font-size: 11px;
+        line-height: 1.6;
+    }
+
+    .reminder-meta {
+        display: grid;
+        grid-template-columns:
+            repeat(
+                2,
+                minmax(0, 1fr)
+            );
+        gap: 8px;
+    }
+
+    .reminder-meta div {
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.02);
+    }
+
+    .reminder-meta span,
+    .reminder-meta strong {
+        display: block;
+    }
+
+    .reminder-meta span {
+        color: var(--muted);
+        font-size: 8px;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+    }
+
+    .reminder-meta strong {
+        margin-top: 5px;
+        overflow: hidden;
+        font-size: 10px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .reminders-empty {
+        padding: 42px 20px;
+        border: 1px dashed var(--line);
+        border-radius: 12px;
+        color: var(--muted);
+        text-align: center;
+    }
+
+    .reminders-empty span {
+        display: block;
+        margin-bottom: 10px;
+        font-size: 36px;
+    }
+
+    .reminders-empty strong {
+        display: block;
+        margin-bottom: 6px;
+        color: #ffffff;
+        font-size: 14px;
+    }
+
+    .reminders-empty p {
+        margin: 0;
+        font-size: 10px;
+        line-height: 1.7;
+    }
+
+    .reminders-info {
+        margin-bottom: 18px;
+        padding: 14px;
+        border: 1px solid rgba(213, 162, 72, 0.2);
+        border-radius: 10px;
+        background: rgba(213, 162, 72, 0.055);
+    }
+
+    .reminders-info strong {
+        display: block;
+        margin-bottom: 6px;
+        color: #efd29b;
+        font-size: 12px;
+    }
+
+    .reminders-info p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 10px;
+        line-height: 1.7;
+    }
+
+    @media (max-width: 850px) {
+        .reminders-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @media (max-width: 560px) {
+        .reminder-meta {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+
+{% endblock %}
+
+{% block content %}
+
+<section class="panel">
+
+```
+<div class="panel-heading">
+    <div>
+        <span class="panel-icon">⏰</span>
+        <h2>Active reminders</h2>
+    </div>
+
+    <span class="pill">
+        {{ reminders|length }} active
+    </span>
+</div>
+
+<div class="reminders-info">
+    <strong>
+        Creating reminders
+    </strong>
+
+    <p>
+        Members create reminders in Discord with
+        <code>/remindme</code>. The dashboard displays reminders that
+        belong to the currently selected server.
+    </p>
+</div>
+
+{% if reminders %}
+
+<div class="reminders-grid">
+
+    {% for reminder in reminders %}
+
+    <article
+        class="reminder-card"
+        data-due-at="{{ reminder.get('due_at', 0) }}"
+    >
+
+        <div class="reminder-card-header">
+            <div>
+                <strong>
+                    Reminder {{ loop.index }}
+                </strong>
+
+                <small>
+                    ID: {{ reminder.get("id", "Unknown") }}
+                </small>
+            </div>
+
+            <span class="reminder-status">
+                Active
+            </span>
+        </div>
+
+        <div class="reminder-message">
+            {{ reminder.get("message", "No reminder text.") }}
+        </div>
+
+        <div class="reminder-meta">
+
+            <div>
+                <span>User ID</span>
+
+                <strong>
+                    {{ reminder.get("user_id", "Unknown") }}
+                </strong>
+            </div>
+
+            <div>
+                <span>Channel ID</span>
+
+                <strong>
+                    {{ reminder.get("channel_id", "Unknown") }}
+                </strong>
+            </div>
+
+            <div>
+                <span>Time remaining</span>
+
+                <strong data-time-remaining>
+                    Calculating...
+                </strong>
+            </div>
+
+            <div>
+                <span>Due time</span>
+
+                <strong data-due-time>
+                    Calculating...
+                </strong>
+            </div>
+
+        </div>
+
+    </article>
+
+    {% endfor %}
+
+</div>
+
+{% else %}
+
+<div class="reminders-empty">
+    <span>⏰</span>
+
+    <strong>
+        No active reminders
+    </strong>
+
+    <p>
+        Reminders will appear here after members create them with
+        the <code>/remindme</code> slash command.
+    </p>
+</div>
+
+{% endif %}
+```
+
+</section>
+{% endblock %}
+
+{% block scripts %}
+
+<script>
+    document.addEventListener(
+        "DOMContentLoaded",
+        () => {
+            const reminderCards = document.querySelectorAll(
+                "[data-due-at]"
+            );
+
+            function formatRemaining(seconds) {
+                if (seconds <= 0) {
+                    return "Due now";
+                }
+
+                const days = Math.floor(
+                    seconds / 86400
+                );
+
+                const hours = Math.floor(
+                    (seconds % 86400) / 3600
+                );
+
+                const minutes = Math.floor(
+                    (seconds % 3600) / 60
+                );
+
+                const remainingSeconds = Math.floor(
+                    seconds % 60
+                );
+
+                const parts = [];
+
+                if (days) {
+                    parts.push(`${days}d`);
+                }
+
+                if (hours) {
+                    parts.push(`${hours}h`);
+                }
+
+                if (minutes) {
+                    parts.push(`${minutes}m`);
+                }
+
+                if (
+                    remainingSeconds
+                    || parts.length === 0
+                ) {
+                    parts.push(
+                        `${remainingSeconds}s`
+                    );
+                }
+
+                return parts.join(" ");
+            }
+
+            function updateReminderTimes() {
+                const now = Date.now() / 1000;
+
+                reminderCards.forEach(
+                    (card) => {
+                        const dueAt = Number(
+                            card.dataset.dueAt
+                        );
+
+                        const remainingElement = (
+                            card.querySelector(
+                                "[data-time-remaining]"
+                            )
+                        );
+
+                        const dueTimeElement = (
+                            card.querySelector(
+                                "[data-due-time]"
+                            )
+                        );
+
+                        if (
+                            !Number.isFinite(dueAt)
+                            || dueAt <= 0
+                        ) {
+                            remainingElement.textContent = (
+                                "Unknown"
+                            );
+
+                            dueTimeElement.textContent = (
+                                "Unknown"
+                            );
+
+                            return;
+                        }
+
+                        const remaining = dueAt - now;
+
+                        remainingElement.textContent = (
+                            formatRemaining(remaining)
+                        );
+
+                        dueTimeElement.textContent = (
+                            new Date(
+                                dueAt * 1000
+                            ).toLocaleString()
+                        );
+                    }
+                );
+            }
+
+            updateReminderTimes();
+
+            window.setInterval(
+                updateReminderTimes,
+                1000
+            );
+        }
+    );
+</script>
+
+{% endblock %}

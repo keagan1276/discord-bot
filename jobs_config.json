@@ -1,0 +1,130 @@
+{
+    "guilds": {
+        "1257004738340323379": {
+            "enabled": true,
+            "daily_cooldown": 86400,
+            "xp_min": 20,
+            "xp_max": 45,
+            "level_pay_bonus": 25,
+            "jobs": {
+                "deckhand": {
+                    "name": "Deckhand",
+                    "emoji": "\u2693",
+                    "description": "Maintain the ship and keep the decks seaworthy.",
+                    "min_pay": 100,
+                    "max_pay": 250,
+                    "risk": 0,
+                    "enabled": true
+                },
+                "fisherman": {
+                    "name": "Fisherman",
+                    "emoji": "\ud83c\udfa3",
+                    "description": "Catch food and valuable sea creatures.",
+                    "min_pay": 150,
+                    "max_pay": 350,
+                    "risk": 5,
+                    "enabled": true
+                },
+                "merchant": {
+                    "name": "Merchant",
+                    "emoji": "\ud83e\ude99",
+                    "description": "Trade cargo between ports for profit.",
+                    "min_pay": 250,
+                    "max_pay": 500,
+                    "risk": 10,
+                    "enabled": true
+                },
+                "navigator": {
+                    "name": "Navigator",
+                    "emoji": "\ud83e\udded",
+                    "description": "Guide pirate ships safely across dangerous waters.",
+                    "min_pay": 300,
+                    "max_pay": 600,
+                    "risk": 15,
+                    "enabled": true
+                },
+                "treasure_hunter": {
+                    "name": "Treasure Hunter",
+                    "emoji": "\ud83d\uddfa\ufe0f",
+                    "description": "Search lost islands for buried treasure.",
+                    "min_pay": 400,
+                    "max_pay": 900,
+                    "risk": 25,
+                    "enabled": true
+                },
+                "privateer": {
+                    "name": "Privateer",
+                    "emoji": "\u2694\ufe0f",
+                    "description": "Hunt enemy vessels under a captain's command.",
+                    "min_pay": 600,
+                    "max_pay": 1300,
+                    "risk": 35,
+                    "enabled": true
+                }
+            }
+        },
+        "1524422636942393445": {
+            "enabled": true,
+            "daily_cooldown": 86400,
+            "xp_min": 20,
+            "xp_max": 45,
+            "level_pay_bonus": 25,
+            "jobs": {
+                "deckhand": {
+                    "name": "Deckhand",
+                    "emoji": "\u2693",
+                    "description": "Maintain the ship and keep the decks seaworthy.",
+                    "min_pay": 100,
+                    "max_pay": 250,
+                    "risk": 0,
+                    "enabled": true
+                },
+                "fisherman": {
+                    "name": "Fisherman",
+                    "emoji": "\ud83c\udfa3",
+                    "description": "Catch food and valuable sea creatures.",
+                    "min_pay": 150,
+                    "max_pay": 350,
+                    "risk": 5,
+                    "enabled": true
+                },
+                "merchant": {
+                    "name": "Merchant",
+                    "emoji": "\ud83e\ude99",
+                    "description": "Trade cargo between ports for profit.",
+                    "min_pay": 250,
+                    "max_pay": 500,
+                    "risk": 10,
+                    "enabled": true
+                },
+                "navigator": {
+                    "name": "Navigator",
+                    "emoji": "\ud83e\udded",
+                    "description": "Guide pirate ships safely across dangerous waters.",
+                    "min_pay": 300,
+                    "max_pay": 600,
+                    "risk": 15,
+                    "enabled": true
+                },
+                "treasure_hunter": {
+                    "name": "Treasure Hunter",
+                    "emoji": "\ud83d\uddfa\ufe0f",
+                    "description": "Search lost islands for buried treasure.",
+                    "min_pay": 400,
+                    "max_pay": 900,
+                    "risk": 25,
+                    "enabled": true
+                },
+                "privateer": {
+                    "name": "Privateer",
+                    "emoji": "\u2694\ufe0f",
+                    "description": "Hunt enemy vessels under a captain's command.",
+                    "min_pay": 600,
+                    "max_pay": 1300,
+                    "risk": 35,
+                    "enabled": true
+                }
+            }
+        }
+    }
+}

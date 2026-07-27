@@ -1,0 +1,903 @@
+{% extends "base.html" %}
+
+{% block title %}
+Role Manager | Pirates Bot
+{% endblock %}
+
+{% block page_name %}
+Role Manager
+{% endblock %}
+
+{% block eyebrow %}
+SERVER MANAGEMENT
+{% endblock %}
+
+{% block heading %}
+👥 Role Manager
+{% endblock %}
+
+{% block description %}
+Search members and add or remove Discord roles.
+{% endblock %}
+
+{% block head %}
+
+<style>
+    .role-manager-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 18px;
+    }
+
+    .role-search {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .role-refresh-button {
+        flex: 0 0 auto;
+    }
+
+    .role-manager-summary {
+        display: grid;
+        grid-template-columns:
+            repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin-bottom: 18px;
+    }
+
+    .role-summary-card {
+        padding: 15px;
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        background: #0d1013;
+    }
+
+    .role-summary-card span,
+    .role-summary-card strong {
+        display: block;
+    }
+
+    .role-summary-card span {
+        color: var(--muted);
+        font-size: 9px;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+    }
+
+    .role-summary-card strong {
+        margin-top: 7px;
+        font-size: 22px;
+    }
+
+    .member-list {
+        display: grid;
+        gap: 13px;
+    }
+
+    .member-card {
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #0d1013;
+    }
+
+    .member-card[hidden] {
+        display: none;
+    }
+
+    .member-heading {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .member-avatar {
+        width: 46px;
+        height: 46px;
+        flex: 0 0 46px;
+        border-radius: 50%;
+        object-fit: cover;
+        background: #23272a;
+    }
+
+    .member-identity {
+        min-width: 0;
+        flex: 1;
+    }
+
+    .member-identity strong,
+    .member-identity small {
+        display: block;
+    }
+
+    .member-identity strong {
+        overflow: hidden;
+        font-size: 13px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .member-identity small {
+        margin-top: 4px;
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 9px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .member-type {
+        padding: 5px 8px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--muted);
+        font-size: 8px;
+        font-weight: 800;
+        text-transform: uppercase;
+    }
+
+    .member-type.bot {
+        color: #b8c3ff;
+        border-color: rgba(88, 101, 242, 0.3);
+        background: rgba(88, 101, 242, 0.1);
+    }
+
+    .member-role-section {
+        margin-top: 15px;
+    }
+
+    .member-role-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 9px;
+    }
+
+    .member-role-title strong {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+    }
+
+    .member-role-title span {
+        color: var(--muted);
+        font-size: 9px;
+    }
+
+    .member-role-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+        min-height: 30px;
+    }
+
+    .role-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 9px;
+        border: 1px solid rgba(255, 255, 255, 0.11);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.04);
+        color: #e5e7ea;
+        font-size: 9px;
+    }
+
+    .role-badge::before {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--gold);
+        content: "";
+    }
+
+    .no-roles {
+        color: var(--muted);
+        font-size: 10px;
+    }
+
+    .member-actions {
+        display: grid;
+        grid-template-columns:
+            minmax(0, 1fr)
+            minmax(0, 1fr);
+        gap: 10px;
+        margin-top: 15px;
+    }
+
+    .role-action-box {
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: rgba(255, 255, 255, 0.018);
+    }
+
+    .role-action-box label {
+        display: block;
+        margin-bottom: 7px;
+        font-size: 10px;
+        font-weight: 700;
+    }
+
+    .role-action-row {
+        display: grid;
+        grid-template-columns:
+            minmax(0, 1fr)
+            auto;
+        gap: 8px;
+    }
+
+    .role-action-row button {
+        white-space: nowrap;
+    }
+
+    .role-remove-button {
+        border: 1px solid rgba(185, 46, 46, 0.3);
+        background: #421717;
+        color: #ffb0b0;
+    }
+
+    .role-empty,
+    .role-loading,
+    .role-error {
+        padding: 42px 20px;
+        border: 1px dashed var(--line);
+        border-radius: 12px;
+        color: var(--muted);
+        text-align: center;
+    }
+
+    .role-empty strong,
+    .role-loading strong,
+    .role-error strong {
+        display: block;
+        margin-bottom: 7px;
+        color: #ffffff;
+    }
+
+    .role-error {
+        color: #ffb0b0;
+        border-color: rgba(185, 46, 46, 0.35);
+    }
+
+    .role-toast-container {
+        position: fixed;
+        top: 82px;
+        right: 22px;
+        z-index: 5000;
+        display: grid;
+        gap: 9px;
+        width: min(360px, calc(100vw - 36px));
+    }
+
+    .role-toast {
+        padding: 13px 15px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #15191d;
+        box-shadow: 0 15px 40px rgba(0, 0, 0, 0.4);
+        color: #ffffff;
+        font-size: 11px;
+    }
+
+    .role-toast.success {
+        border-color: rgba(54, 207, 104, 0.3);
+    }
+
+    .role-toast.error {
+        border-color: rgba(185, 46, 46, 0.4);
+        color: #ffb0b0;
+    }
+
+    @media (max-width: 760px) {
+        .role-manager-summary,
+        .member-actions {
+            grid-template-columns: 1fr;
+        }
+
+        .role-manager-toolbar {
+            align-items: stretch;
+            flex-direction: column;
+        }
+    }
+</style>
+
+{% endblock %}
+
+{% block content %}
+
+<div
+    id="role-manager"
+    data-guild-id="{{ selected_guild_id }}"
+>
+    <section class="panel">
+
+```
+    <div class="panel-heading">
+        <div>
+            <span class="panel-icon">👥</span>
+            <h2>Search Members</h2>
+        </div>
+    </div>
+
+    <div class="role-manager-toolbar">
+        <input
+            class="role-search"
+            id="member-search"
+            type="search"
+            placeholder="🔍 Search members..."
+            autocomplete="off"
+        >
+
+        <button
+            class="secondary-button role-refresh-button"
+            id="refresh-members"
+            type="button"
+        >
+            ↻ Refresh
+        </button>
+    </div>
+
+    <div class="role-manager-summary">
+        <article class="role-summary-card">
+            <span>Members</span>
+            <strong id="member-count">0</strong>
+        </article>
+
+        <article class="role-summary-card">
+            <span>Roles</span>
+            <strong id="role-count">0</strong>
+        </article>
+
+        <article class="role-summary-card">
+            <span>Bots</span>
+            <strong id="bot-count">0</strong>
+        </article>
+    </div>
+
+    <div id="role-manager-content">
+        <div class="role-loading">
+            <strong>Loading server members...</strong>
+            <span>Please wait while Pirates Bot contacts Discord.</span>
+        </div>
+    </div>
+
+</section>
+```
+
+</div>
+
+<div
+    class="role-toast-container"
+    id="role-toast-container"
+></div>
+{% endblock %}
+
+{% block scripts %}
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+    const manager = document.getElementById("role-manager");
+    const guildId = manager.dataset.guildId;
+
+    const content = document.getElementById(
+        "role-manager-content"
+    );
+
+    const searchInput = document.getElementById(
+        "member-search"
+    );
+
+    const refreshButton = document.getElementById(
+        "refresh-members"
+    );
+
+    const memberCount = document.getElementById(
+        "member-count"
+    );
+
+    const roleCount = document.getElementById(
+        "role-count"
+    );
+
+    const botCount = document.getElementById(
+        "bot-count"
+    );
+
+    const toastContainer = document.getElementById(
+        "role-toast-container"
+    );
+
+    let members = [];
+    let roles = [];
+
+    function showToast(message, type = "success") {
+        const toast = document.createElement("div");
+
+        toast.className = `role-toast ${type}`;
+        toast.textContent = message;
+
+        toastContainer.appendChild(toast);
+
+        window.setTimeout(
+            () => toast.remove(),
+            4000
+        );
+    }
+
+    function createOption(value, label) {
+        const option = document.createElement("option");
+
+        option.value = value;
+        option.textContent = label;
+
+        return option;
+    }
+
+    function getRole(roleId) {
+        return roles.find(
+            role => String(role.id) === String(roleId)
+        );
+    }
+
+    function getMemberRoles(member) {
+        return member.role_ids
+            .map(getRole)
+            .filter(Boolean);
+    }
+
+    function availableRoles(member) {
+        const memberRoleIds = new Set(
+            member.role_ids.map(String)
+        );
+
+        return roles.filter(
+            role => !memberRoleIds.has(String(role.id))
+        );
+    }
+
+    async function changeRole(
+        member,
+        roleId,
+        action,
+        button
+    ) {
+        if (!roleId) {
+            showToast(
+                "Please select a role.",
+                "error"
+            );
+            return;
+        }
+
+        const oldText = button.textContent;
+
+        button.disabled = true;
+        button.textContent = "Saving...";
+
+        try {
+            const response = await fetch(
+                `/api/guild/${guildId}/member-role`,
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        member_id: member.id,
+                        role_id: roleId,
+                        action: action
+                    })
+                }
+            );
+
+            const result = await response.json();
+
+            if (!response.ok || !result.ok) {
+                throw new Error(
+                    result.error
+                    || "The role could not be changed."
+                );
+            }
+
+            if (action === "add") {
+                if (!member.role_ids.includes(String(roleId))) {
+                    member.role_ids.push(String(roleId));
+                }
+            } else {
+                member.role_ids = member.role_ids.filter(
+                    existingId =>
+                        String(existingId)
+                        !== String(roleId)
+                );
+            }
+
+            showToast(
+                result.message
+                || "Role updated successfully."
+            );
+
+            renderMembers();
+
+        } catch (error) {
+            showToast(
+                error.message,
+                "error"
+            );
+
+        } finally {
+            button.disabled = false;
+            button.textContent = oldText;
+        }
+    }
+
+    function buildRoleBadges(member) {
+        const container = document.createElement("div");
+
+        container.className = "member-role-list";
+
+        const assignedRoles = getMemberRoles(member);
+
+        if (!assignedRoles.length) {
+            const empty = document.createElement("span");
+
+            empty.className = "no-roles";
+            empty.textContent = "No assigned roles";
+
+            container.appendChild(empty);
+            return container;
+        }
+
+        assignedRoles.forEach(role => {
+            const badge = document.createElement("span");
+
+            badge.className = "role-badge";
+            badge.textContent = role.name;
+            badge.title = `Role ID: ${role.id}`;
+
+            container.appendChild(badge);
+        });
+
+        return container;
+    }
+
+    function buildRoleAction(
+        title,
+        member,
+        action
+    ) {
+        const box = document.createElement("div");
+
+        box.className = "role-action-box";
+
+        const label = document.createElement("label");
+        label.textContent = title;
+
+        const row = document.createElement("div");
+        row.className = "role-action-row";
+
+        const select = document.createElement("select");
+
+        const roleOptions = (
+            action === "add"
+            ? availableRoles(member)
+            : getMemberRoles(member)
+        );
+
+        select.appendChild(
+            createOption(
+                "",
+                action === "add"
+                    ? "Select role to add"
+                    : "Select role to remove"
+            )
+        );
+
+        roleOptions.forEach(role => {
+            select.appendChild(
+                createOption(
+                    role.id,
+                    role.name
+                )
+            );
+        });
+
+        const button = document.createElement("button");
+
+        button.type = "button";
+        button.className = (
+            action === "add"
+            ? "primary-button"
+            : "danger-button role-remove-button"
+        );
+
+        button.textContent = (
+            action === "add"
+            ? "➕ Add Role"
+            : "➖ Remove Role"
+        );
+
+        button.disabled = roleOptions.length === 0;
+
+        button.addEventListener("click", () => {
+            changeRole(
+                member,
+                select.value,
+                action,
+                button
+            );
+        });
+
+        row.appendChild(select);
+        row.appendChild(button);
+
+        box.appendChild(label);
+        box.appendChild(row);
+
+        return box;
+    }
+
+    function buildMemberCard(member) {
+        const card = document.createElement("article");
+
+        card.className = "member-card";
+        card.dataset.search = (
+            `${member.name} ${member.username}`
+        ).toLowerCase();
+
+        const heading = document.createElement("div");
+        heading.className = "member-heading";
+
+        const avatar = document.createElement("img");
+
+        avatar.className = "member-avatar";
+        avatar.src = member.avatar_url;
+        avatar.alt = "";
+        avatar.loading = "lazy";
+
+        const identity = document.createElement("div");
+
+        identity.className = "member-identity";
+
+        const name = document.createElement("strong");
+        name.textContent = member.name;
+
+        const username = document.createElement("small");
+
+        username.textContent = (
+            `${member.username} • ID: ${member.id}`
+        );
+
+        identity.appendChild(name);
+        identity.appendChild(username);
+
+        const type = document.createElement("span");
+
+        type.className = (
+            member.bot
+            ? "member-type bot"
+            : "member-type"
+        );
+
+        type.textContent = member.bot
+            ? "Bot"
+            : "Member";
+
+        heading.appendChild(avatar);
+        heading.appendChild(identity);
+        heading.appendChild(type);
+
+        const roleSection = document.createElement("div");
+
+        roleSection.className = "member-role-section";
+
+        const roleTitle = document.createElement("div");
+
+        roleTitle.className = "member-role-title";
+
+        const roleHeading = document.createElement("strong");
+        roleHeading.textContent = "Roles";
+
+        const roleTotal = document.createElement("span");
+
+        roleTotal.textContent = (
+            `${member.role_ids.length} assigned`
+        );
+
+        roleTitle.appendChild(roleHeading);
+        roleTitle.appendChild(roleTotal);
+
+        roleSection.appendChild(roleTitle);
+        roleSection.appendChild(
+            buildRoleBadges(member)
+        );
+
+        const actions = document.createElement("div");
+
+        actions.className = "member-actions";
+
+        actions.appendChild(
+            buildRoleAction(
+                "Assign a role",
+                member,
+                "add"
+            )
+        );
+
+        actions.appendChild(
+            buildRoleAction(
+                "Remove a role",
+                member,
+                "remove"
+            )
+        );
+
+        card.appendChild(heading);
+        card.appendChild(roleSection);
+        card.appendChild(actions);
+
+        return card;
+    }
+
+    function applySearch() {
+        const query = searchInput.value
+            .trim()
+            .toLowerCase();
+
+        document.querySelectorAll(
+            ".member-card"
+        ).forEach(card => {
+            card.hidden = (
+                query
+                && !card.dataset.search.includes(query)
+            );
+        });
+    }
+
+    function renderMembers() {
+        content.innerHTML = "";
+
+        const list = document.createElement("div");
+
+        list.className = "member-list";
+
+        members.forEach(member => {
+            list.appendChild(
+                buildMemberCard(member)
+            );
+        });
+
+        if (!members.length) {
+            content.innerHTML = `
+                <div class="role-empty">
+                    <strong>No members were found</strong>
+                    <span>
+                        Make sure the bot has Server Members Intent enabled.
+                    </span>
+                </div>
+            `;
+            return;
+        }
+
+        content.appendChild(list);
+        applySearch();
+    }
+
+    async function loadRoleManager() {
+        content.innerHTML = `
+            <div class="role-loading">
+                <strong>Loading server members...</strong>
+                <span>
+                    Please wait while Pirates Bot contacts Discord.
+                </span>
+            </div>
+        `;
+
+        refreshButton.disabled = true;
+
+        try {
+            const [membersResponse, rolesResponse] = (
+                await Promise.all([
+                    fetch(
+                        `/api/guild/${guildId}/members`
+                    ),
+                    fetch(
+                        `/api/guild/${guildId}/roles`
+                    )
+                ])
+            );
+
+            const membersResult = (
+                await membersResponse.json()
+            );
+
+            const rolesResult = (
+                await rolesResponse.json()
+            );
+
+            if (!membersResponse.ok) {
+                throw new Error(
+                    membersResult.error
+                    || "Could not load members."
+                );
+            }
+
+            if (!rolesResponse.ok) {
+                throw new Error(
+                    rolesResult.error
+                    || "Could not load roles."
+                );
+            }
+
+            members = Array.isArray(membersResult)
+                ? membersResult
+                : [];
+
+            roles = Array.isArray(rolesResult)
+                ? rolesResult
+                : [];
+
+            members.sort(
+                (first, second) =>
+                    first.name.localeCompare(
+                        second.name
+                    )
+            );
+
+            roles.sort(
+                (first, second) =>
+                    first.name.localeCompare(
+                        second.name
+                    )
+            );
+
+            memberCount.textContent = members.length;
+            roleCount.textContent = roles.length;
+
+            botCount.textContent = members.filter(
+                member => member.bot
+            ).length;
+
+            renderMembers();
+
+        } catch (error) {
+            content.innerHTML = "";
+
+            const errorBox = document.createElement("div");
+
+            errorBox.className = "role-error";
+
+            const heading = document.createElement("strong");
+            heading.textContent = "Role Manager could not load";
+
+            const message = document.createElement("span");
+            message.textContent = error.message;
+
+            errorBox.appendChild(heading);
+            errorBox.appendChild(message);
+
+            content.appendChild(errorBox);
+
+        } finally {
+            refreshButton.disabled = false;
+        }
+    }
+
+    searchInput.addEventListener(
+        "input",
+        applySearch
+    );
+
+    refreshButton.addEventListener(
+        "click",
+        loadRoleManager
+    );
+
+    loadRoleManager();
+});
+</script>
+
+{% endblock %}

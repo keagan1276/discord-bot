@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+<title>Pirates Bot Tickets</title>
+
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+</head>
+
+
+<body>
+
+
+<div class="main">
+
+
+<h2>🎫 Ticket Settings</h2>
+
+<p class="subtitle">
+Manage your Pirates Bot ticket system.
+</p>
+
+
+
+<form method="POST">
+
+
+
+<div class="card">
+
+<h3>🎫 Ticket System</h3>
+
+
+<label>
+
+<input type="checkbox" name="enabled"
+
+{% if ticket.enabled %}checked{% endif %}>
+
+Enable Ticket System
+
+</label>
+
+
+<br><br>
+
+
+Ticket Channel:
+
+<br>
+
+<input 
+name="ticket_channel"
+value="{{ ticket.ticket_channel }}">
+
+
+
+<br><br>
+
+
+Category ID:
+
+<br>
+
+<input 
+name="category_id"
+value="{{ ticket.category_id }}">
+
+
+
+<br><br>
+
+
+Staff Role ID:
+
+<br>
+
+<input 
+name="staff_role_id"
+value="{{ ticket.staff_role_id }}">
+
+
+
+</div>
+
+
+
+
+
+<div class="card">
+
+
+<h3>💬 Ticket Message</h3>
+
+
+<textarea name="message">
+
+{{ ticket.message }}
+
+</textarea>
+
+
+</div>
+
+
+
+
+
+
+<div class="card">
+
+
+<h3>🔘 Button Settings</h3>
+
+
+
+<label>
+
+<input type="checkbox" name="button_enabled"
+
+{% if ticket.button.enabled %}checked{% endif %}>
+
+
+Enable Button
+
+</label>
+
+
+
+<br><br>
+
+
+Button Text:
+
+<br>
+
+
+<input
+
+name="button_text"
+
+value="{{ ticket.button.text }}">
+
+
+
+</div>
+
+
+
+
+
+
+
+<div class="card">
+
+
+<h3>📜 Closing Settings</h3>
+
+
+
+Close Message:
+
+<br>
+
+
+<input
+
+name="close_message"
+
+value="{{ ticket.settings.close_message }}">
+
+
+
+<br><br>
+
+
+
+<label>
+
+<input type="checkbox" name="transcript"
+
+{% if ticket.settings.transcript %}checked{% endif %}>
+
+
+Enable Transcripts
+
+</label>
+
+
+
+<br><br>
+
+
+
+<label>
+
+<input type="checkbox" name="delete_after_close"
+
+{% if ticket.settings.delete_after_close %}checked{% endif %}>
+
+
+Delete Ticket After Close
+
+</label>
+
+
+
+</div>
+
+
+
+
+
+
+<button type="submit">
+
+🔥 Save Ticket Settings
+
+</button>
+</form>
+<br><br>
+
+<a href="/" class="back-button">
+⬅ Back to Dashboard
+</a>
+
+
+
+
+</div>
+<script src="{{ url_for('static', filename='js/discord-selectors.js') }}"></script>
+
+</body>
+
+</html>

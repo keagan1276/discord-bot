@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Pirates Bot Dashboard</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+
+<div class="main">
+
+<h2>🎭 Reaction Roles</h2>
+
+<form method="POST">
+
+<label>Channel ID</label>
+<input name="channel_id" value="{{roles.channel_id}}">
+
+
+<label>Message ID</label>
+<input name="message_id" value="{{roles.message_id}}">
+
+
+<label>Emoji</label>
+<input name="emoji" value="{{roles.roles[0].emoji}}">
+
+
+<label>Role ID</label>
+<input name="role_id" value="{{roles.roles[0].role_id}}">
+
+
+<button>
+Save Reaction Role
+</button>
+
+</form>
+<br>
+
+
+<a href="/" class="back-button">
+⬅ Back to Dashboard
+</a>
+
+
+</div>
+<script src="{{ url_for('static', filename='js/discord-selectors.js') }}"></script>
+
+</body>
+
+</html>

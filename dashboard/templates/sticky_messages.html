@@ -1,0 +1,650 @@
+{% extends "base.html" %}
+
+{% block title %}
+Sticky Messages | Pirates Bot
+{% endblock %}
+
+{% block page_name %}
+Sticky Messages
+{% endblock %}
+
+{% block eyebrow %}
+MESSAGE AUTOMATION
+{% endblock %}
+
+{% block heading %}
+📌 Sticky Messages
+{% endblock %}
+
+{% block description %}
+Keep an important message visible at the bottom of selected Discord channels.
+{% endblock %}
+
+{% block head %}
+
+<style>
+    .sticky-layout {
+        display: grid;
+        grid-template-columns:
+            minmax(0, 1fr)
+            minmax(300px, 420px);
+        gap: 18px;
+        align-items: start;
+    }
+
+    .sticky-form-panel,
+    .sticky-list-panel {
+        min-width: 0;
+    }
+
+    .sticky-description {
+        margin: 0 0 18px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.7;
+    }
+
+    .sticky-status-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #0d1013;
+    }
+
+    .sticky-status-row strong,
+    .sticky-status-row small {
+        display: block;
+    }
+
+    .sticky-status-row strong {
+        font-size: 12px;
+    }
+
+    .sticky-status-row small {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 10px;
+    }
+
+    .sticky-message-box {
+        min-height: 170px;
+    }
+
+    .sticky-help-box {
+        padding: 14px;
+        border: 1px solid rgba(213, 162, 72, 0.2);
+        border-radius: 10px;
+        background: rgba(213, 162, 72, 0.055);
+    }
+
+    .sticky-help-box strong {
+        display: block;
+        margin-bottom: 7px;
+        color: #efd29b;
+        font-size: 12px;
+    }
+
+    .sticky-help-box p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 10px;
+        line-height: 1.7;
+    }
+
+    .sticky-preview {
+        padding: 16px;
+        border-radius: 10px;
+        background: #313338;
+        color: #dbdee1;
+    }
+
+    .sticky-preview-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 12px;
+    }
+
+    .sticky-preview-avatar {
+        display: grid;
+        place-items: center;
+        width: 38px;
+        height: 38px;
+        flex: 0 0 38px;
+        border-radius: 50%;
+        background: #5a1e1e;
+        font-size: 20px;
+    }
+
+    .sticky-preview-header strong,
+    .sticky-preview-header small {
+        display: block;
+    }
+
+    .sticky-preview-header strong {
+        font-size: 12px;
+    }
+
+    .sticky-preview-header small {
+        margin-top: 2px;
+        color: #949ba4;
+        font-size: 9px;
+    }
+
+    .sticky-preview-content {
+        min-height: 50px;
+        padding-left: 48px;
+        overflow-wrap: anywhere;
+        white-space: pre-wrap;
+        font-size: 12px;
+        line-height: 1.6;
+    }
+
+    .sticky-channel-list {
+        display: grid;
+        gap: 12px;
+    }
+
+    .sticky-channel-card {
+        padding: 15px;
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        background: #0d1013;
+    }
+
+    .sticky-channel-heading {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
+    .sticky-channel-heading strong {
+        display: block;
+        color: #ffffff;
+        font-size: 12px;
+    }
+
+    .sticky-channel-heading small {
+        display: block;
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 9px;
+    }
+
+    .sticky-state {
+        flex: 0 0 auto;
+        padding: 5px 8px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        font-size: 8px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .sticky-state.enabled {
+        color: #aef0bf;
+        border-color: rgba(54, 207, 104, 0.25);
+        background: rgba(54, 207, 104, 0.09);
+    }
+
+    .sticky-state.disabled {
+        color: #ffb0b0;
+        border-color: rgba(185, 46, 46, 0.25);
+        background: rgba(185, 46, 46, 0.09);
+    }
+
+    .sticky-channel-message {
+        margin: 13px 0;
+        padding: 12px;
+        overflow-wrap: anywhere;
+        border-left: 3px solid var(--red);
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.025);
+        color: #c8ccd0;
+        white-space: pre-wrap;
+        font-size: 10px;
+        line-height: 1.6;
+    }
+
+    .sticky-card-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .sticky-edit-button,
+    .sticky-delete-button {
+        padding: 8px 11px;
+        border-radius: 7px;
+        font: inherit;
+        font-size: 10px;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .sticky-edit-button {
+        border: 1px solid rgba(213, 162, 72, 0.24);
+        background: #423017;
+        color: #f3d49b;
+    }
+
+    .sticky-delete-button {
+        border: 1px solid rgba(185, 46, 46, 0.3);
+        background: #421717;
+        color: #ffb0b0;
+    }
+
+    .sticky-empty {
+        padding: 34px 18px;
+        border: 1px dashed var(--line);
+        border-radius: 11px;
+        color: var(--muted);
+        text-align: center;
+    }
+
+    .sticky-empty span {
+        display: block;
+        margin-bottom: 10px;
+        font-size: 32px;
+    }
+
+    .sticky-empty strong {
+        display: block;
+        margin-bottom: 5px;
+        color: #ffffff;
+        font-size: 13px;
+    }
+
+    .sticky-empty p {
+        margin: 0;
+        font-size: 10px;
+        line-height: 1.6;
+    }
+
+    @media (max-width: 1050px) {
+        .sticky-layout {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+
+{% endblock %}
+
+{% block content %}
+
+<div class="sticky-layout">
+
+```
+<section class="panel sticky-form-panel">
+
+    <div class="panel-heading">
+        <div>
+            <span class="panel-icon">📌</span>
+            <h2>Create or edit a sticky message</h2>
+        </div>
+    </div>
+
+    <p class="sticky-description">
+        When a member sends a new message in the selected channel,
+        Pirates Bot removes the previous sticky and posts it again at
+        the bottom of the channel.
+    </p>
+
+    <form
+        method="POST"
+        action="{{ url_for('sticky_messages') }}"
+        id="sticky-form"
+    >
+        <input
+            type="hidden"
+            name="action"
+            value="save"
+        >
+
+        <div class="form-group">
+            <label for="channel_id">
+                Discord channel
+            </label>
+
+            <p class="help">
+                Select the channel where the sticky message should appear.
+            </p>
+
+            <select
+                id="channel_id"
+                name="channel_id"
+                required
+                data-discord-select="channels"
+                data-guild-id="{{ selected_guild_id }}"
+                data-placeholder="Select a text channel"
+            >
+                <option value="">
+                    Select a text channel
+                </option>
+
+                {% for channel_id, settings in sticky_channels.items() %}
+                <option value="{{ channel_id }}">
+                    Saved channel — {{ channel_id }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <div class="sticky-status-row">
+                <div>
+                    <strong>Enable this sticky message</strong>
+
+                    <small>
+                        Disabled sticky messages remain saved but are not reposted.
+                    </small>
+                </div>
+
+                <label class="switch large">
+                    <input
+                        type="checkbox"
+                        id="enabled"
+                        name="enabled"
+                        checked
+                    >
+
+                    <span></span>
+                </label>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="message">
+                Sticky message
+            </label>
+
+            <p class="help">
+                Discord messages can contain up to 2,000 characters.
+            </p>
+
+            <textarea
+                id="message"
+                name="message"
+                class="sticky-message-box"
+                maxlength="2000"
+                required
+                placeholder="📌 Important: Please read the server rules before chatting."
+            ></textarea>
+
+            <p
+                class="help"
+                id="character-count"
+            >
+                0 / 2000 characters
+            </p>
+        </div>
+
+        <div class="form-group">
+            <div class="sticky-help-box">
+                <strong>How it works</strong>
+
+                <p>
+                    The bot saves one sticky configuration per channel.
+                    Saving the same channel again updates its existing
+                    sticky message instead of creating a duplicate.
+                </p>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>
+                Discord preview
+            </label>
+
+            <div class="sticky-preview">
+                <div class="sticky-preview-header">
+                    <div class="sticky-preview-avatar">
+                        ☠️
+                    </div>
+
+                    <div>
+                        <strong>
+                            Pirates Bot
+                            <span class="bot-tag">BOT</span>
+                        </strong>
+
+                        <small>Today at 12:00</small>
+                    </div>
+                </div>
+
+                <div
+                    class="sticky-preview-content"
+                    id="sticky-preview-content"
+                >
+                    📌 Your sticky message preview will appear here.
+                </div>
+            </div>
+        </div>
+
+        <div class="save-bar">
+            <span>
+                Save the sticky message for the selected Discord server.
+            </span>
+
+            <button
+                type="submit"
+                class="primary-button"
+            >
+                Save Sticky Message
+            </button>
+        </div>
+
+    </form>
+
+</section>
+
+<section class="panel sticky-list-panel">
+
+    <div class="panel-heading">
+        <div>
+            <span class="panel-icon">📋</span>
+            <h2>Configured channels</h2>
+        </div>
+
+        <span class="pill">
+            {{ sticky_channels|length }} saved
+        </span>
+    </div>
+
+    {% if sticky_channels %}
+
+    <div class="sticky-channel-list">
+
+        {% for channel_id, settings in sticky_channels.items() %}
+
+        <article class="sticky-channel-card">
+
+            <div class="sticky-channel-heading">
+                <div>
+                    <strong>
+                        # Channel
+                    </strong>
+
+                    <small>
+                        ID: {{ channel_id }}
+                    </small>
+                </div>
+
+                {% if settings.get("enabled") %}
+
+                <span class="sticky-state enabled">
+                    Enabled
+                </span>
+
+                {% else %}
+
+                <span class="sticky-state disabled">
+                    Disabled
+                </span>
+
+                {% endif %}
+            </div>
+
+            <div class="sticky-channel-message">
+                {{ settings.get("message", "No sticky message has been entered.") }}
+            </div>
+
+            <div class="sticky-card-actions">
+
+                <button
+                    type="button"
+                    class="sticky-edit-button"
+                    data-edit-sticky
+                    data-channel-id="{{ channel_id }}"
+                    data-message="{{ settings.get('message', '')|e }}"
+                    data-enabled="{{ 'true' if settings.get('enabled') else 'false' }}"
+                >
+                    Edit
+                </button>
+
+                <form
+                    method="POST"
+                    action="{{ url_for('sticky_messages') }}"
+                    onsubmit="return confirm('Delete this sticky message configuration?');"
+                >
+                    <input
+                        type="hidden"
+                        name="action"
+                        value="delete"
+                    >
+
+                    <input
+                        type="hidden"
+                        name="channel_id"
+                        value="{{ channel_id }}"
+                    >
+
+                    <button
+                        type="submit"
+                        class="sticky-delete-button"
+                    >
+                        Delete
+                    </button>
+                </form>
+
+            </div>
+
+        </article>
+
+        {% endfor %}
+
+    </div>
+
+    {% else %}
+
+    <div class="sticky-empty">
+        <span>📌</span>
+
+        <strong>
+            No sticky messages configured
+        </strong>
+
+        <p>
+            Select a Discord channel, enter a message and save it
+            to create your first sticky message.
+        </p>
+    </div>
+
+    {% endif %}
+
+</section>
+```
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+
+<script>
+    document.addEventListener(
+        "DOMContentLoaded",
+        () => {
+            const messageInput = document.getElementById(
+                "message"
+            );
+
+            const previewContent = document.getElementById(
+                "sticky-preview-content"
+            );
+
+            const characterCount = document.getElementById(
+                "character-count"
+            );
+
+            const channelSelect = document.getElementById(
+                "channel_id"
+            );
+
+            const enabledInput = document.getElementById(
+                "enabled"
+            );
+
+            function updatePreview() {
+                const value = messageInput.value.trim();
+
+                previewContent.textContent = (
+                    value
+                    || "📌 Your sticky message preview will appear here."
+                );
+
+                characterCount.textContent = (
+                    `${messageInput.value.length} / 2000 characters`
+                );
+            }
+
+            messageInput.addEventListener(
+                "input",
+                updatePreview
+            );
+
+            document.querySelectorAll(
+                "[data-edit-sticky]"
+            ).forEach(
+                (button) => {
+                    button.addEventListener(
+                        "click",
+                        () => {
+                            channelSelect.value = (
+                                button.dataset.channelId
+                            );
+
+                            messageInput.value = (
+                                button.dataset.message
+                                || ""
+                            );
+
+                            enabledInput.checked = (
+                                button.dataset.enabled
+                                === "true"
+                            );
+
+                            updatePreview();
+
+                            document.getElementById(
+                                "sticky-form"
+                            ).scrollIntoView({
+                                behavior: "smooth",
+                                block: "start"
+                            });
+                        }
+                    );
+                }
+            );
+
+            updatePreview();
+        }
+    );
+</script>
+
+{% endblock %}

@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+<title>Pirates Bot Welcome</title>
+
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+</head>
+
+
+<body>
+
+<div class="main">
+
+
+<h2>👋 Welcome Settings</h2>
+
+<p class="subtitle">
+Customize your Pirates Bot welcome system.
+</p>
+
+
+
+<form method="POST">
+
+
+
+<div class="card">
+
+<h3>⚓ Welcome System</h3>
+
+
+<label>
+<input type="checkbox" name="enabled"
+{% if welcome.enabled %}checked{% endif %}>
+Enable Welcome Messages
+</label>
+
+
+<br><br>
+
+
+Channel:
+
+<input 
+name="channel"
+value="{{ welcome.channel }}">
+
+
+<br><br>
+
+
+Welcome Message:
+
+<br>
+
+<textarea name="message">{{ welcome.message }}</textarea>
+
+
+</div>
+
+
+
+
+<div class="card">
+
+<h3>🖼 Images</h3>
+
+
+Welcome Picture URL:
+
+<br>
+
+<input 
+name="image_url"
+value="{{ welcome.image_url }}">
+{% if welcome.image_url %}
+<br><br>
+<img src="{{ welcome.image_url }}" width="300">
+{% endif %}
+
+<br><br>
+
+
+Banner Picture URL:
+
+<br>
+
+<input 
+name="banner_url"
+value="{{ welcome.banner_url }}">
+
+
+</div>
+
+
+
+
+
+<div class="card">
+
+<h3>🔗 Button Settings</h3>
+
+
+<label>
+
+<input type="checkbox" name="button_enabled"
+
+{% if welcome.button.enabled %}checked{% endif %}>
+
+Enable Button
+
+</label>
+
+
+<br><br>
+
+
+Button Text:
+
+<input 
+name="button_text"
+value="{{ welcome.button.text }}">
+
+
+<br><br>
+
+
+Button URL:
+
+<input 
+name="button_url"
+value="{{ welcome.button.url }}">
+
+
+</div>
+
+
+
+
+
+<div class="card">
+
+<h3>📩 Direct Message</h3>
+
+
+<label>
+
+<input type="checkbox" name="dm_enabled"
+
+{% if welcome.dm.enabled %}checked{% endif %}>
+
+Enable Welcome DM
+
+</label>
+
+
+<br><br>
+
+
+DM Message:
+
+<br>
+
+<textarea name="dm_message">{{ welcome.dm.message }}</textarea>
+
+
+</div>
+
+
+
+
+
+<button type="submit">
+
+🔥 Save Welcome Settings
+
+</button>
+</form>
+
+<br><br>
+
+<a href="/" class="back-button">
+⬅ Back to Dashboard
+</a>
+
+</div>
+<script src="{{ url_for('static', filename='js/discord-selectors.js') }}"></script>
+
+</body>
+
+</html>

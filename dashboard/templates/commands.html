@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Commands | Pirates Bot{% endblock %}
+{% block page_name %}Commands{% endblock %}
+{% block eyebrow %}COMMAND CENTRE{% endblock %}
+{% block heading %}Bot Commands{% endblock %}
+{% block description %}Browse every prefix and slash command currently loaded by Pirates Bot.{% endblock %}
+{% block content %}
+<div class="metric-grid compact">
+    <div class="metric-card"><span>Total Commands</span><strong>{{ commands_data.total }}</strong></div>
+    <div class="metric-card"><span>Prefix Commands</span><strong>{{ commands_data.prefix_commands|length }}</strong></div>
+    <div class="metric-card"><span>Slash Commands</span><strong>{{ commands_data.slash_commands|length }}</strong></div>
+</div>
+
+<div class="content-grid two">
+    <section class="panel">
+        <div class="panel-heading">
+            <div><span class="panel-icon">!</span><h2>Prefix Commands</h2></div>
+            <span class="pill">{{ commands_data.prefix_commands|length }}</span>
+        </div>
+        <div class="command-list">
+            {% for command in commands_data.prefix_commands %}
+            <div class="command-row">
+                <code>!{{ command.name }}</code>
+                <p>{{ command.description }}</p>
+            </div>
+            {% else %}
+            <div class="empty-state"><span>⌁</span><h3>No prefix commands</h3><p>No prefix commands are currently loaded.</p></div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="panel">
+        <div class="panel-heading">
+            <div><span class="panel-icon">/</span><h2>Slash Commands</h2></div>
+            <span class="pill">{{ commands_data.slash_commands|length }}</span>
+        </div>
+        <div class="command-list">
+            {% for command in commands_data.slash_commands %}
+            <div class="command-row">
+                <code>/{{ command.name }}</code>
+                <p>{{ command.description }}</p>
+            </div>
+            {% else %}
+            <div class="empty-state"><span>/</span><h3>No slash commands</h3><p>No slash commands are currently loaded.</p></div>
+            {% endfor %}
+        </div>
+    </section>
+</div>
+{% endblock %}

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Giveaways | Pirates Bot{% endblock %}
+{% block page_name %}Giveaways{% endblock %}
+{% block eyebrow %}TREASURE DROPS{% endblock %}
+{% block heading %}Giveaway Builder{% endblock %}
+{% block description %}Launch a timed giveaway with an entry button directly from the dashboard.{% endblock %}
+{% block content %}
+{% if request.args.get('published') %}<div class="alert success">✅ Giveaway started in Discord.</div>{% endif %}
+{% if publish_error %}<div class="alert" style="border:1px solid #8f3030;color:#ffb0b0;background:#351515;">❌ {{ publish_error }}</div>{% endif %}
+<form method="POST" class="settings-form">
+<div class="editor-grid">
+<section class="panel">
+<div class="panel-heading"><div><span class="panel-icon">🎉</span><h2>Giveaway Settings</h2></div></div>
+<div class="form-group"><label>Discord channel</label><input name="channel_id" value="{{ giveaway.get('channel_id','') }}" placeholder="Choose a channel" required></div>
+<div class="form-group"><label>Title</label><input name="title" value="{{ giveaway.get('title','🎉 Giveaway') }}" data-preview-source="giveaway_title"></div>
+<div class="form-group"><label>Prize</label><input name="prize" value="{{ giveaway.get('prize','') }}" data-preview-source="giveaway_prize" placeholder="Example: Discord Nitro" required></div>
+<div class="form-row"><div class="form-group"><label>Duration in seconds</label><input type="number" min="10" name="duration_seconds" value="{{ giveaway.get('duration_seconds',3600) }}"></div><div class="form-group"><label>Winner count</label><input type="number" min="1" max="20" name="winner_count" value="{{ giveaway.get('winner_count',1) }}"></div></div>
+<div class="form-row"><div class="form-group"><label>Colour</label><input type="color" name="color" value="{{ giveaway.get('color','#F1C40F') }}"></div><div class="form-group"><label>Footer</label><input name="footer" value="{{ giveaway.get('footer','') }}"></div></div>
+<div class="form-group"><label>Image URL</label><input type="url" name="image_url" value="{{ giveaway.get('image_url','') }}" placeholder="https://..."></div>
+</section>
+<aside class="preview-card sticky"><div class="preview-label">LIVE GIVEAWAY PREVIEW</div><div class="discord-message"><div class="discord-avatar">☠️</div><div class="discord-body"><div><strong>Pirates Bot</strong> <span class="bot-tag">BOT</span></div><div class="discord-embed"><h3 data-preview-target="giveaway_title">{{ giveaway.get('title','🎉 Giveaway') }}</h3><p><strong>Prize:</strong> <span data-preview-target="giveaway_prize">{{ giveaway.get('prize') or 'Discord Nitro' }}</span><br><strong>Winners:</strong> {{ giveaway.get('winner_count',1) }}<br><strong>Ends in:</strong> {{ giveaway.get('duration_seconds',3600) }} seconds</p><p>Press the button below to enter!</p></div><button class="discord-button" type="button">Enter Giveaway 🎉</button></div></div></aside>
+</div>
+<div class="save-bar"><span>Publishing starts the timer immediately.</span><button class="primary-button" type="submit">Start Giveaway</button></div>
+</form>
+{% endblock %}

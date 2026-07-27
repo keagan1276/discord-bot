@@ -1,0 +1,70 @@
+{
+    "enabled": true,
+    "category_id": "1458087631014596772",
+    "staff_role_id": "1257225278158143629",
+    "ticket_channel": "1418532734778998806",
+    "message": "\r\n\r\nClick the button below to open a ticket 🏴‍☠️\r\n\r\n\r\n\r\n",
+    "button": {
+        "enabled": true,
+        "text": "🎫 Open Ticket"
+    },
+    "settings": {
+        "close_message": "Ticket closed by staff.",
+        "transcript": true,
+        "delete_after_close": true
+    },
+    "panel_message_id": "1530438158431420437",
+    "guild_id": "1257004738340323379",
+    "selection_type": "dropdown",
+    "option_count": 3,
+    "panel": {
+        "title": "🎟 Open a Ticket",
+        "description": "Select the type of ticket you want to open.",
+        "color": "991111",
+        "placeholder": "Choose a ticket type...",
+        "footer": "Pirates Bot Support",
+        "image_url": "",
+        "thumbnail_url": ""
+    },
+    "options": [
+        {
+            "enabled": true,
+            "name": "SUPPORT",
+            "emoji": "🎟",
+            "description": "",
+            "button_color": "grey",
+            "embed_color": "991111",
+            "category_id": "",
+            "category_name": "Tickets",
+            "staff_role_id": "",
+            "channel_prefix": "ticket",
+            "opening_message": "Welcome {user}. Please explain how we can help with your {type} ticket."
+        },
+        {
+            "enabled": true,
+            "name": "RAID",
+            "emoji": "🎟",
+            "description": "",
+            "button_color": "grey",
+            "embed_color": "991111",
+            "category_id": "",
+            "category_name": "Tickets",
+            "staff_role_id": "",
+            "channel_prefix": "ticket",
+            "opening_message": "Welcome {user}. Please explain how we can help with your {type} ticket."
+        },
+        {
+            "enabled": true,
+            "name": "BATTLE",
+            "emoji": "🎟",
+            "description": "",
+            "button_color": "blue",
+            "embed_color": "991111",
+            "category_id": "",
+            "category_name": "Tickets",
+            "staff_role_id": "",
+            "channel_prefix": "ticket",
+            "opening_message": "Welcome {user}. Please explain how we can help with your {type} ticket."
+        }
+    ]
+}

@@ -1,28 +1,431 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 import json
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import asyncio
 import time
+import os
 from math import floor
 from dotenv import load_dotenv
 load_dotenv()
-
-from flask import Flask
+import re
+from flask import Flask, jsonify, request
 from threading import Thread
+from discord.ext import tasks
+import secrets
 
 app = Flask(__name__)
+print("BOT.PY IS RUNNING")
+DASHBOARD_API_KEY = os.getenv("DASHBOARD_API_KEY", "")
+
+
+def dashboard_authorized():
+    supplied_key = request.headers.get("X-Dashboard-Key", "")
+    return bool(DASHBOARD_API_KEY and supplied_key == DASHBOARD_API_KEY)
+
 
 @app.route("/")
 def home():
     return "Bot is running!"
 
-def run_web():
-    app.run(host="0.0.0.0", port=10000)
 
-Thread(target=run_web).start()
+@app.route("/api/bot-status")
+def bot_status():
+    if not dashboard_authorized():
+        return jsonify({"error": "Unauthorized"}), 401
+
+    if not bot.is_ready():
+        return jsonify({
+            "online": False,
+            "bot_name": "Starting...",
+            "servers": 0,
+            "members": 0,
+            "latency_ms": 0
+        })
+
+    member_count = sum(guild.member_count or 0 for guild in bot.guilds)
+
+    return jsonify({
+        "online": True,
+        "bot_name": str(bot.user),
+        "bot_id": str(bot.user.id),
+        "servers": len(bot.guilds),
+        "members": member_count,
+        "latency_ms": round(bot.latency * 1000)
+    })
+
+
+@app.route("/api/commands")
+def bot_commands():
+    if not dashboard_authorized():
+        return jsonify({"error": "Unauthorized"}), 401
+
+    prefix_commands = [
+        {
+            "name": command.qualified_name,
+            "description": command.help or "No description",
+            "type": "prefix"
+        }
+        for command in bot.walk_commands()
+        if not command.hidden
+    ]
+
+    slash_commands = []
+    for command in bot.tree.get_commands():
+        slash_commands.append({
+            "name": command.name,
+            "description": getattr(command, "description", "No description") or "No description",
+            "type": "slash"
+        })
+
+    return jsonify({
+        "prefix_commands": prefix_commands,
+        "slash_commands": slash_commands,
+        "total": len(prefix_commands) + len(slash_commands)
+    })
+@app.route("/api/guilds")
+def api_guilds():
+
+    if not dashboard_authorized():
+        return jsonify({"error": "Unauthorized"}), 401
+
+    return jsonify([
+        {
+            "id": str(guild.id),
+            "name": guild.name
+        }
+        for guild in bot.guilds
+    ])
+
+
+@app.route("/api/guild/<int:guild_id>/channels")
+def api_channels(guild_id):
+
+    if not dashboard_authorized():
+        return jsonify({"error": "Unauthorized"}), 401
+
+    guild = bot.get_guild(guild_id)
+
+    if guild is None:
+        return jsonify({"error": "Guild not found"}), 404
+
+    channels = [
+        {
+            "id": str(channel.id),
+            "name": channel.name,
+            "type": str(channel.type)
+        }
+        for channel in guild.channels
+    ]
+
+    return jsonify(channels)
+
+
+@app.route("/api/guild/<int:guild_id>/roles")
+def api_roles(guild_id):
+
+    if not dashboard_authorized():
+        return jsonify({"error": "Unauthorized"}), 401
+
+    guild = bot.get_guild(guild_id)
+
+    if guild is None:
+        return jsonify({"error": "Guild not found"}), 404
+
+    roles = [
+        {
+            "id": str(role.id),
+            "name": role.name
+        }
+        for role in guild.roles
+        if not role.is_default()
+    ]
+
+    return jsonify(roles)
+
+async def change_member_role(
+    guild_id,
+    member_id,
+    role_id,
+    action
+):
+    guild = bot.get_guild(
+        int(guild_id)
+    )
+
+    if guild is None:
+        raise ValueError(
+            "Guild not found"
+        )
+
+    member = guild.get_member(
+        int(member_id)
+    )
+
+    if member is None:
+        try:
+            member = await guild.fetch_member(
+                int(member_id)
+            )
+        except discord.NotFound:
+            raise ValueError(
+                "Member not found"
+            )
+
+    role = guild.get_role(
+        int(role_id)
+    )
+
+    if role is None:
+        raise ValueError(
+            "Role not found"
+        )
+
+    bot_member = guild.me
+
+    if bot_member is None:
+        raise ValueError(
+            "Bot member not found"
+        )
+
+    if role.is_default():
+        raise ValueError(
+            "The @everyone role cannot be changed"
+        )
+
+    if role >= bot_member.top_role:
+        raise ValueError(
+            "Move the bot role above the selected role"
+        )
+
+    if action == "add":
+        if role not in member.roles:
+            await member.add_roles(
+                role,
+                reason="Role Manager dashboard"
+            )
+
+        message = (
+            f"Added {role.name} to "
+            f"{member.display_name}"
+        )
+
+    elif action == "remove":
+        if role in member.roles:
+            await member.remove_roles(
+                role,
+                reason="Role Manager dashboard"
+            )
+
+        message = (
+            f"Removed {role.name} from "
+            f"{member.display_name}"
+        )
+
+    else:
+        raise ValueError(
+            "Invalid role action"
+        )
+
+    return {
+        "ok": True,
+        "message": message,
+        "member_id": str(member.id),
+        "role_id": str(role.id),
+        "action": action
+    }
+    
+@app.route(
+    "/api/guild/<int:guild_id>/members"
+)
+
+def api_members(guild_id):
+    if not dashboard_authorized():
+        return jsonify(
+            {
+                "error": "Unauthorized"
+            }
+        ), 401
+
+    guild = bot.get_guild(
+        guild_id
+    )
+
+    if guild is None:
+        return jsonify(
+            {
+                "error": "Guild not found"
+            }
+        ), 404
+
+    members = []
+
+    for member in guild.members:
+        members.append({
+            "id": str(member.id),
+            "name": member.display_name,
+            "username": str(member),
+            "avatar_url": str(
+                member.display_avatar.url
+            ),
+            "bot": member.bot,
+            "role_ids": [
+                str(role.id)
+                for role in member.roles
+                if not role.is_default()
+            ]
+        })
+
+    return jsonify(
+        members
+    )
+
+@app.route("/api/guild/<int:guild_id>/categories")
+def api_categories(guild_id):
+
+    if not dashboard_authorized():
+        return jsonify({"error": "Unauthorized"}), 401
+
+    guild = bot.get_guild(guild_id)
+
+    if guild is None:
+        return jsonify({"error": "Guild not found"}), 404
+
+    categories = [
+        {
+            "id": str(category.id),
+            "name": category.name
+        }
+        for category in guild.categories
+    ]
+
+    return jsonify(categories)
+@app.route(
+    "/api/guild/<int:guild_id>/member-role",
+    methods=["POST"]
+)
+def api_member_role(guild_id):
+    if not dashboard_authorized():
+        return jsonify(
+            {
+                "error": "Unauthorized"
+            }
+        ), 401
+
+    if not bot.is_ready():
+        return jsonify(
+            {
+                "error": "Bot is not ready"
+            }
+        ), 503
+
+    payload = request.get_json(
+        silent=True
+    ) or {}
+
+    member_id = payload.get(
+        "member_id"
+    )
+
+    role_id = payload.get(
+        "role_id"
+    )
+
+    action = str(
+        payload.get(
+            "action",
+            ""
+        )
+    ).strip().lower()
+
+    if not member_id or not role_id:
+        return jsonify(
+            {
+                "error": "Member ID and role ID are required"
+            }
+        ), 400
+
+    if action not in {
+        "add",
+        "remove"
+    }:
+        return jsonify(
+            {
+                "error": "Invalid action"
+            }
+        ), 400
+
+    future = asyncio.run_coroutine_threadsafe(
+        change_member_role(
+            guild_id=guild_id,
+            member_id=member_id,
+            role_id=role_id,
+            action=action
+        ),
+        bot.loop
+    )
+
+    try:
+        result = future.result(
+            timeout=15
+        )
+
+        return jsonify(
+            result
+        )
+
+    except Exception as error:
+        return jsonify(
+            {
+                "error": str(error)
+            }
+        ), 500
+
+@app.route("/api/dashboard/apply/<feature>", methods=["POST"])
+def dashboard_apply_feature(feature):
+    if not dashboard_authorized():
+        return jsonify({"error": "Unauthorized"}), 401
+
+    allowed = {
+        "welcome", "tickets", "moderation", "embeds",
+        "reaction_roles", "rules", "settings", "economy",
+        "polls", "giveaways"
+    }
+    if feature not in allowed:
+        return jsonify({"error": "Unknown feature"}), 404
+
+    if not bot.is_ready():
+        return jsonify({"error": "Bot is not ready"}), 503
+
+    future = asyncio.run_coroutine_threadsafe(
+        apply_dashboard_feature(feature),
+        bot.loop
+    )
+    try:
+        result = future.result(timeout=15)
+        return jsonify({"ok": True, **(result or {})})
+    except Exception as error:
+        print(f"Dashboard apply error ({feature}): {error}")
+        return jsonify({"error": str(error)}), 500
+
+
+def run_web():
+    port = int(
+        os.getenv(
+            "PORT",
+            "10000"
+        )
+    )
+
+    app.run(
+        host="0.0.0.0",
+        port=port,
+        debug=False,
+        use_reloader=False
+    )
+
 
 print("BOT FILE STARTED")
 # ------------------- Bot Setup -------------------
@@ -33,24 +436,184 @@ intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
 
+Thread(target=run_web, daemon=True).start()
+
 TICKET_CATEGORY_NAME = "Tickets"
 STAFF_ROLES = ["Admin", "Staff"]
 DAILY_REWARD = 500
+
+
+# ------------------- DYNAMIC RULES SYSTEM -------------------
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+RULES_FILE = os.path.join(BASE_DIR, "rules.json")
+WELCOME_FILE = os.path.join(BASE_DIR, "welcome.json")
+TICKET_FILE = os.path.join(BASE_DIR, "ticket.json")
+MODERATION_FILE = os.path.join(BASE_DIR, "moderation.json")
+COMMAND_PERMISSIONS_FILE = os.path.join(BASE_DIR, "command_permissions.json")
+EMBED_FILE = os.path.join(BASE_DIR, "embeds.json")
+REACTION_ROLE_FILE = os.path.join(BASE_DIR, "reaction_roles.json")
+DASHBOARD_FILE = os.path.join(BASE_DIR, "dashboard.json")
+ECONOMY_FILE = os.path.join(BASE_DIR, "economy.json")
+POLL_FILE = os.path.join(BASE_DIR, "polls.json")
+GIVEAWAY_FILE = os.path.join(BASE_DIR, "giveaways.json")
+JOBS_CONFIG_FILE = os.path.join(BASE_DIR, "jobs_config.json")
+JOBS_USERS_FILE = os.path.join(BASE_DIR, "jobs_users.json")
+STICKY_FILE = os.path.join(BASE_DIR, "sticky_messages.json")
+ANNOUNCEMENTS_FILE = os.path.join(BASE_DIR, "auto_announcements.json")
+REMINDERS_FILE = os.path.join(BASE_DIR, "reminders.json")
+ROLE_MANAGER_FILE = os.path.join(BASE_DIR, "role_manager.json")
+LOGS_FILE = os.path.join(BASE_DIR, "logs.json")
+PERMISSIONS_FILE = os.path.join(BASE_DIR, "permission_manager.json")
+TRANSCRIPTS_FOLDER = os.path.join(BASE_DIR, "ticket_transcripts")
+os.makedirs(TRANSCRIPTS_FOLDER, exist_ok=True)
+def load_rules() -> dict:
+    try:
+        with open(RULES_FILE, "r", encoding="utf-8") as file:
+            return json.load(file)
+    except FileNotFoundError:
+        return {"menu": {}, "sections": {}}
+    except json.JSONDecodeError as error:
+        print(f"rules.json is invalid: {error}")
+        return {"menu": {}, "sections": {}}
+
+
+def parse_colour(value: str, default: int = 0x991111) -> int:
+    try:
+        return int(str(value).replace("#", ""), 16)
+    except (TypeError, ValueError):
+        return default
+
+
+class RuleSectionButton(discord.ui.Button):
+    def __init__(self, section_key: str, section: dict, row: int):
+        super().__init__(
+            label=section.get("button_label", section_key.replace("_", " ").title()),
+            emoji=section.get("button_emoji") or None,
+            style=discord.ButtonStyle.danger,
+            custom_id=f"pirates_rules:{section_key}",
+            row=row
+        )
+        self.section_key = section_key
+
+    async def callback(self, interaction: discord.Interaction):
+        section = load_rules().get("sections", {}).get(self.section_key)
+        if section is None:
+            await interaction.response.send_message(
+                "❌ This rules section no longer exists.",
+                ephemeral=True
+            )
+            return
+
+        embed = discord.Embed(
+            title=section.get("title", self.section_key.replace("_", " ").title()),
+            description=section.get("description", "No rules have been added to this section."),
+            colour=parse_colour(section.get("color", "991111"))
+        )
+
+        thumbnail_url = str(section.get("thumbnail_url", "")).strip()
+        image_url = str(section.get("image_url", "")).strip()
+        footer = str(section.get("footer", "🏴‍☠️ Pirates Bot Rules")).strip()
+
+        if thumbnail_url:
+            embed.set_thumbnail(url=thumbnail_url)
+        if image_url:
+            embed.set_image(url=image_url)
+        if footer:
+            embed.set_footer(text=footer)
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+class RulesMenuView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        sections = load_rules().get("sections", {})
+
+        for index, (section_key, section) in enumerate(sections.items()):
+            row = index // 5
+            if row > 4:
+                break
+            self.add_item(RuleSectionButton(section_key, section, row))
+
+
+@bot.command(name="rulesmenu")
+@commands.has_permissions(administrator=True)
+async def rules_menu(ctx: commands.Context):
+    rules_data = load_rules()
+    menu = rules_data.get("menu", {})
+    sections = rules_data.get("sections", {})
+
+    if not sections:
+        await ctx.send("❌ No rules sections exist. Add one in the dashboard first.")
+        return
+
+    embed = discord.Embed(
+        title=menu.get("title", "🏴‍☠️ Pirates Server Rules"),
+        description=menu.get("description", "Choose a rules section below."),
+        colour=parse_colour(menu.get("color", "991111"))
+    )
+
+    thumbnail_url = str(menu.get("thumbnail_url", "")).strip()
+    image_url = str(menu.get("image_url", "")).strip()
+    footer = str(menu.get("footer", "")).strip()
+
+    if thumbnail_url:
+        embed.set_thumbnail(url=thumbnail_url)
+    if image_url:
+        embed.set_image(url=image_url)
+    if footer:
+        embed.set_footer(text=footer)
+
+    target_channel = ctx.channel
+    channel_id = str(menu.get("channel_id", "")).strip()
+
+    if channel_id:
+        try:
+            target_channel = ctx.guild.get_channel(int(channel_id))
+        except ValueError:
+            await ctx.send("❌ The rules channel ID is invalid.")
+            return
+
+        if target_channel is None:
+            await ctx.send("❌ I could not find the selected rules channel.")
+            return
+
+    message = await target_channel.send(embed=embed, view=RulesMenuView())
+    menu["message_id"] = str(message.id)
+
+    with open(RULES_FILE, "w", encoding="utf-8") as file:
+        json.dump(rules_data, file, indent=4, ensure_ascii=False)
+
+    if target_channel.id != ctx.channel.id:
+        await ctx.send(f"✅ Rules menu posted in {target_channel.mention}.")
+
+
+@rules_menu.error
+async def rules_menu_error(ctx: commands.Context, error):
+    if isinstance(error, commands.MissingPermissions):
+        await ctx.send("❌ Only administrators can post the rules menu.")
+        return
+    raise error
 # ------------------- GIVEAWAY VIEW -------------------
 class GiveawayView(discord.ui.View):
-    def __init__(self, duration: int, prize: str, author: discord.Member):
+    def __init__(self, duration: int, prize: str, author=None, winner_count: int = 1):
         super().__init__(timeout=duration)
         self.entries = []
         self.prize = prize
         self.author = author
-        self.message = None  # will be set after sending
+        self.winner_count = max(1, int(winner_count))
+        self.message = None
 
-    @discord.ui.button(label="Enter Giveaway 🎉", style=discord.ButtonStyle.green)
+    @discord.ui.button(
+        label="Enter Giveaway 🎉",
+        style=discord.ButtonStyle.green,
+        custom_id="pirates:giveaway_enter"
+    )
     async def enter(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user in self.entries:
+        if interaction.user.id in self.entries:
             await interaction.response.send_message("❌ You already entered!", ephemeral=True)
         else:
-            self.entries.append(interaction.user)
+            self.entries.append(interaction.user.id)
             await interaction.response.send_message("✅ You entered the giveaway!", ephemeral=True)
 
     async def on_timeout(self):
@@ -59,12 +622,34 @@ class GiveawayView(discord.ui.View):
         if not self.entries:
             await self.message.edit(content=f"🎉 Giveaway for **{self.prize}** ended! No entries 😢", view=None)
             return
-        winner = random.choice(self.entries)
-        await self.message.edit(content=f"🎉 Giveaway for **{self.prize}** ended! Winner: {winner.mention}", view=None)
-        try:
-            await winner.send(f"🎉 Congrats! You won the giveaway for **{self.prize}** in {self.message.guild.name}!")
-        except:
-            pass
+        selected_ids = random.sample(
+            self.entries,
+            k=min(self.winner_count, len(self.entries))
+        )
+        winner_mentions = []
+        winners = []
+        for winner_id in selected_ids:
+            winner = self.message.guild.get_member(winner_id)
+            winners.append(winner)
+            winner_mentions.append(winner.mention if winner else f"<@{winner_id}>")
+
+        await self.message.edit(
+            content=(
+                f"🎉 Giveaway for **{self.prize}** ended! "
+                f"Winner{'s' if len(winner_mentions) != 1 else ''}: "
+                + ", ".join(winner_mentions)
+            ),
+            view=None
+        )
+        for winner in winners:
+            if winner:
+                try:
+                    await winner.send(
+                        f"🎉 Congrats! You won the giveaway for **{self.prize}** "
+                        f"in {self.message.guild.name}!"
+                    )
+                except discord.HTTPException:
+                    pass
   
  # ------------------- POLL -------------------
 class PollView(discord.ui.View):
@@ -85,7 +670,7 @@ class PollView(discord.ui.View):
         embed.add_field(name="❌ No", value=str(no_count), inline=True)
         await interaction.response.edit_message(embed=embed, view=self)
 
-    @discord.ui.button(label="✅ Yes", style=discord.ButtonStyle.green)
+    @discord.ui.button(label="✅ Yes", style=discord.ButtonStyle.green, custom_id="pirates:poll_yes")
     async def yes_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id in self.votes["yes"]:
             return await interaction.response.send_message("You already voted ✅", ephemeral=True)
@@ -94,7 +679,7 @@ class PollView(discord.ui.View):
         self.votes["yes"].append(interaction.user.id)
         await self.update_message(interaction)
 
-    @discord.ui.button(label="❌ No", style=discord.ButtonStyle.red)
+    @discord.ui.button(label="❌ No", style=discord.ButtonStyle.red, custom_id="pirates:poll_no")
     async def no_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id in self.votes["no"]:
             return await interaction.response.send_message("You already voted ❌", ephemeral=True)
@@ -257,35 +842,1130 @@ def get_reaction_roles():
 def update_reaction_roles(data):
     save_json("reaction_roles.json", data)
     
-    # ================== JOB SYSTEM ==================
+def get_command_access(
+guild_id,
+command_name
+):
+    data = load_json(
+        COMMAND_PERMISSIONS_FILE,
+        {
+            "guilds": {}
+        }
+    )
 
-JOB_FILE = "jobs.json"
-ACTIVITY_FILE = "activity.json"
+    guild_settings = (
+        data.get("guilds", {})
+        .get(str(guild_id), {})
+    )
 
-# Job definitions
-JOBS = {
-    "doctor": {
-        "name": "Doctor",
-        "min": 300,
-        "max": 600,
-        "risk": 0.0
+    commands_data = guild_settings.get(
+        "commands",
+        {}
+    )
+
+    return commands_data.get(
+        str(command_name).lower(),
+        "everyone"
+    )
+
+
+def member_is_command_staff(member):
+    if member is None:
+        return False
+
+    if member.guild_permissions.administrator:
+        return True
+
+    member_role_names = {
+        role.name.lower()
+        for role in member.roles
+    }
+
+    return any(
+        role_name.lower() in member_role_names
+        for role_name in STAFF_ROLES
+    )
+# =========================================================
+# LOGGING ENGINE
+# =========================================================
+
+MAX_LOGS_PER_GUILD = 5000
+
+
+def save_guild_log(
+    guild_id,
+    log_type,
+    data
+):
+    logs_data = load_json(
+        LOGS_FILE,
+        {
+            "guilds": {}
+        }
+    )
+
+    if not isinstance(logs_data, dict):
+        logs_data = {
+            "guilds": {}
+        }
+
+    guilds = logs_data.setdefault(
+        "guilds",
+        {}
+    )
+
+    guild_logs = guilds.setdefault(
+        str(guild_id),
+        []
+    )
+
+    if not isinstance(guild_logs, list):
+        guild_logs = []
+        guilds[str(guild_id)] = guild_logs
+
+    entry = {
+        "id": secrets.token_hex(8),
+        "type": str(log_type),
+        "timestamp": time.time(),
+        "data": data
+    }
+
+    guild_logs.append(
+        entry
+    )
+
+    if len(guild_logs) > MAX_LOGS_PER_GUILD:
+        guilds[str(guild_id)] = guild_logs[
+            -MAX_LOGS_PER_GUILD:
+        ]
+
+    save_json(
+        LOGS_FILE,
+        logs_data
+    )   
+    # =========================================================
+# MESSAGE LOG EVENTS
+# =========================================================
+
+@bot.event
+async def on_message_delete(
+    message: discord.Message
+):
+    if not message.guild:
+        return
+
+    if message.author.bot:
+        return
+
+    attachments = [
+        attachment.url
+        for attachment in message.attachments
+    ]
+
+    save_guild_log(
+        message.guild.id,
+        "message_delete",
+        {
+            "user_id": str(message.author.id),
+            "user_name": str(message.author),
+            "display_name": message.author.display_name,
+            "channel_id": str(message.channel.id),
+            "channel_name": getattr(
+                message.channel,
+                "name",
+                "Unknown"
+            ),
+            "message": message.content[:2000],
+            "attachments": attachments,
+            "message_id": str(message.id)
+        }
+    )
+
+
+@bot.event
+async def on_message_edit(
+    before: discord.Message,
+    after: discord.Message
+):
+    if not before.guild:
+        return
+
+    if before.author.bot:
+        return
+
+    if before.content == after.content:
+        return
+
+    save_guild_log(
+        before.guild.id,
+        "message_edit",
+        {
+            "user_id": str(before.author.id),
+            "user_name": str(before.author),
+            "display_name": before.author.display_name,
+            "channel_id": str(before.channel.id),
+            "channel_name": getattr(
+                before.channel,
+                "name",
+                "Unknown"
+            ),
+            "before": before.content[:2000],
+            "after": after.content[:2000],
+            "message_id": str(before.id),
+            "jump_url": after.jump_url
+        }
+    )
+    # =========================================================
+# MEMBER JOIN / LEAVE LOGS
+# =========================================================
+
+@bot.event
+async def on_member_join(member: discord.Member):
+    save_guild_log(
+        member.guild.id,
+        "member_join",
+        {
+            "user_id": str(member.id),
+            "user_name": str(member),
+            "display_name": member.display_name,
+            "joined_at": (
+                member.joined_at.isoformat()
+                if member.joined_at
+                else None
+            ),
+            "created_at": (
+                member.created_at.isoformat()
+            ),
+            "bot": member.bot
+        }
+    )
+
+
+@bot.event
+async def on_member_remove(member: discord.Member):
+    save_guild_log(
+        member.guild.id,
+        "member_leave",
+        {
+            "user_id": str(member.id),
+            "user_name": str(member),
+            "display_name": member.display_name,
+            "joined_at": (
+                member.joined_at.isoformat()
+                if member.joined_at
+                else None
+            ),
+            "bot": member.bot
+        }
+    )
+@bot.event
+async def on_member_update(
+    before: discord.Member,
+    after: discord.Member
+):
+    if before.display_name != after.display_name:
+        save_guild_log(
+            after.guild.id,
+            "nickname_change",
+            {
+                "user_id": str(after.id),
+                "user_name": str(after),
+                "before": before.display_name,
+                "after": after.display_name
+            }
+        )
+# =========================================================
+# PIRATE JOB SYSTEM
+# =========================================================
+
+DEFAULT_PIRATE_JOBS = {
+    "deckhand": {
+        "name": "Deckhand",
+        "emoji": "⚓",
+        "description": "Maintain the ship and keep the decks seaworthy.",
+        "min_pay": 100,
+        "max_pay": 250,
+        "risk": 0,
+        "enabled": True
     },
-    "policeman": {
-        "name": "Policeman",
-        "min": 250,
-        "max": 500,
-        "risk": 0.0
+    "fisherman": {
+        "name": "Fisherman",
+        "emoji": "🎣",
+        "description": "Catch food and valuable sea creatures.",
+        "min_pay": 150,
+        "max_pay": 350,
+        "risk": 5,
+        "enabled": True
     },
-    "crimeboss": {
-        "name": "Crime Boss",
-        "min": 500,
-        "max": 900,
-        "risk": 0.35  # 35% chance to lose money
+    "merchant": {
+        "name": "Merchant",
+        "emoji": "🪙",
+        "description": "Trade cargo between ports for profit.",
+        "min_pay": 250,
+        "max_pay": 500,
+        "risk": 10,
+        "enabled": True
+    },
+    "navigator": {
+        "name": "Navigator",
+        "emoji": "🧭",
+        "description": "Guide pirate ships safely across dangerous waters.",
+        "min_pay": 300,
+        "max_pay": 600,
+        "risk": 15,
+        "enabled": True
+    },
+    "treasure_hunter": {
+        "name": "Treasure Hunter",
+        "emoji": "🗺️",
+        "description": "Search lost islands for buried treasure.",
+        "min_pay": 400,
+        "max_pay": 900,
+        "risk": 25,
+        "enabled": True
+    },
+    "privateer": {
+        "name": "Privateer",
+        "emoji": "⚔️",
+        "description": "Hunt enemy vessels under a captain's command.",
+        "min_pay": 600,
+        "max_pay": 1300,
+        "risk": 35,
+        "enabled": True
     }
 }
 
-def level_requirement(level: int):
-    return level * 100
+
+def load_jobs_config():
+    data = load_json(
+        JOBS_CONFIG_FILE,
+        {
+            "guilds": {}
+        }
+    )
+
+    if not isinstance(data, dict):
+        data = {
+            "guilds": {}
+        }
+
+    data.setdefault("guilds", {})
+
+    return data
+
+
+def save_jobs_config(data):
+    save_json(
+        JOBS_CONFIG_FILE,
+        data
+    )
+
+
+def get_guild_jobs_config(guild_id):
+    data = load_jobs_config()
+    guild_id = str(guild_id)
+
+    guild_settings = data["guilds"].setdefault(
+        guild_id,
+        {
+            "enabled": True,
+            "daily_cooldown": 86400,
+            "xp_min": 20,
+            "xp_max": 45,
+            "level_pay_bonus": 25,
+            "jobs": DEFAULT_PIRATE_JOBS.copy()
+        }
+    )
+
+    guild_settings.setdefault("enabled", True)
+    guild_settings.setdefault("daily_cooldown", 86400)
+    guild_settings.setdefault("xp_min", 20)
+    guild_settings.setdefault("xp_max", 45)
+    guild_settings.setdefault("level_pay_bonus", 25)
+    guild_settings.setdefault(
+        "jobs",
+        DEFAULT_PIRATE_JOBS.copy()
+    )
+
+    if not isinstance(guild_settings["jobs"], dict):
+        guild_settings["jobs"] = DEFAULT_PIRATE_JOBS.copy()
+
+    save_jobs_config(data)
+
+    return guild_settings
+
+
+def load_jobs_users():
+    data = load_json(
+        JOBS_USERS_FILE,
+        {
+            "guilds": {}
+        }
+    )
+
+    if not isinstance(data, dict):
+        data = {
+            "guilds": {}
+        }
+
+    data.setdefault("guilds", {})
+
+    return data
+
+
+def save_jobs_users(data):
+    save_json(
+        JOBS_USERS_FILE,
+        data
+    )
+
+
+def job_level_requirement(level):
+    return max(
+        100,
+        int(level) * 100
+    )
+
+
+def job_progress_bar(current_xp, required_xp):
+    if required_xp <= 0:
+        return "⬜" * 10
+
+    filled = min(
+        10,
+        int((current_xp / required_xp) * 10)
+    )
+
+    return "🟥" * filled + "⬛" * (10 - filled)
+
+
+def seconds_until_job_ready(last_worked, cooldown):
+    if not last_worked:
+        return 0
+
+    try:
+        last_timestamp = float(last_worked)
+    except (TypeError, ValueError):
+        return 0
+
+    elapsed = time.time() - last_timestamp
+
+    return max(
+        0,
+        int(cooldown - elapsed)
+    )
+
+
+def format_job_cooldown(seconds):
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+
+    parts = []
+
+    if hours:
+        parts.append(f"{hours}h")
+
+    if minutes:
+        parts.append(f"{minutes}m")
+
+    if seconds or not parts:
+        parts.append(f"{seconds}s")
+
+    return " ".join(parts)
+
+
+# ---------------------------------------------------------
+# /jobs
+# ---------------------------------------------------------
+
+@tree.command(
+    name="jobs",
+    description="View the pirate jobs available in this server"
+)
+async def jobs_command(
+    interaction: discord.Interaction
+):
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            "❌ This command can only be used in a server.",
+            ephemeral=True
+        )
+        return
+
+    settings = get_guild_jobs_config(
+        interaction.guild.id
+    )
+
+    if not settings.get("enabled", True):
+        await interaction.response.send_message(
+            "❌ The pirate jobs system is disabled in this server.",
+            ephemeral=True
+        )
+        return
+
+    available_jobs = [
+        (job_key, job)
+        for job_key, job in settings.get("jobs", {}).items()
+        if job.get("enabled", True)
+    ]
+
+    embed = discord.Embed(
+        title="🏴‍☠️ Pirate Careers",
+        description=(
+            "Choose your place aboard the fleet with "
+            "`/choosejob`.\n\n"
+            "Higher-risk jobs may earn more treasure, "
+            "but a failed voyage can cost you gold."
+        ),
+        colour=discord.Colour.dark_red()
+    )
+
+    if not available_jobs:
+        embed.description = (
+            "No pirate jobs are currently available."
+        )
+
+    for job_key, job in available_jobs:
+        embed.add_field(
+            name=(
+                f"{job.get('emoji', '⚓')} "
+                f"{job.get('name', job_key.title())}"
+            ),
+            value=(
+                f"{job.get('description', 'No description')}\n"
+                f"**Pay:** ${int(job.get('min_pay', 0)):,}"
+                f"–${int(job.get('max_pay', 0)):,}\n"
+                f"**Risk:** {int(job.get('risk', 0))}%\n"
+                f"**Job ID:** `{job_key}`"
+            ),
+            inline=False
+        )
+
+    embed.set_footer(
+        text="Pirates Bot • Choose wisely, matey."
+    )
+
+    await interaction.response.send_message(
+        embed=embed
+    )
+
+
+# ---------------------------------------------------------
+# /choosejob
+# ---------------------------------------------------------
+
+@tree.command(
+    name="choosejob",
+    description="Choose your pirate career"
+)
+@app_commands.describe(
+    job="Job ID shown in /jobs"
+)
+async def choosejob(
+    interaction: discord.Interaction,
+    job: str
+):
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            "❌ This command can only be used in a server.",
+            ephemeral=True
+        )
+        return
+
+    settings = get_guild_jobs_config(
+        interaction.guild.id
+    )
+
+    if not settings.get("enabled", True):
+        await interaction.response.send_message(
+            "❌ The pirate jobs system is disabled.",
+            ephemeral=True
+        )
+        return
+
+    job_key = (
+        str(job)
+        .strip()
+        .lower()
+        .replace(" ", "_")
+    )
+
+    job_data = settings.get(
+        "jobs",
+        {}
+    ).get(job_key)
+
+    if not job_data or not job_data.get("enabled", True):
+        await interaction.response.send_message(
+            "❌ That pirate job does not exist or is disabled. "
+            "Use `/jobs` to see the available jobs.",
+            ephemeral=True
+        )
+        return
+
+    users_data = load_jobs_users()
+    guild_users = users_data["guilds"].setdefault(
+        str(interaction.guild.id),
+        {}
+    )
+
+    existing = guild_users.get(
+        str(interaction.user.id),
+        {}
+    )
+
+    guild_users[str(interaction.user.id)] = {
+        "job": job_key,
+        "level": max(
+            1,
+            int(existing.get("level", 1))
+        ),
+        "xp": max(
+            0,
+            int(existing.get("xp", 0))
+        ),
+        "total_earned": max(
+            0,
+            int(existing.get("total_earned", 0))
+        ),
+        "successful_jobs": max(
+            0,
+            int(existing.get("successful_jobs", 0))
+        ),
+        "failed_jobs": max(
+            0,
+            int(existing.get("failed_jobs", 0))
+        ),
+        "last_worked": existing.get(
+            "last_worked"
+        )
+    }
+
+    save_jobs_users(users_data)
+
+    embed = discord.Embed(
+        title="⚓ New Pirate Career",
+        description=(
+            f"{interaction.user.mention}, you are now a "
+            f"**{job_data.get('name', job_key.title())}**!"
+        ),
+        colour=discord.Colour.dark_red()
+    )
+
+    embed.add_field(
+        name="Role",
+        value=(
+            f"{job_data.get('emoji', '⚓')} "
+            f"{job_data.get('name', job_key.title())}"
+        ),
+        inline=True
+    )
+
+    embed.add_field(
+        name="Possible pay",
+        value=(
+            f"${int(job_data.get('min_pay', 0)):,}"
+            f"–${int(job_data.get('max_pay', 0)):,}"
+        ),
+        inline=True
+    )
+
+    embed.add_field(
+        name="Voyage risk",
+        value=f"{int(job_data.get('risk', 0))}%",
+        inline=True
+    )
+
+    await interaction.response.send_message(
+        embed=embed
+    )
+
+
+# ---------------------------------------------------------
+# /jobwork
+# ---------------------------------------------------------
+
+@tree.command(
+    name="jobwork",
+    description="Complete a voyage for your pirate job"
+)
+async def jobwork(
+    interaction: discord.Interaction
+):
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            "❌ This command can only be used in a server.",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.defer()
+
+    settings = get_guild_jobs_config(
+        interaction.guild.id
+    )
+
+    if not settings.get("enabled", True):
+        await interaction.followup.send(
+            "❌ The pirate jobs system is disabled.",
+            ephemeral=True
+        )
+        return
+
+    users_data = load_jobs_users()
+    guild_users = users_data["guilds"].setdefault(
+        str(interaction.guild.id),
+        {}
+    )
+
+    user_id = str(interaction.user.id)
+    user_data = guild_users.get(user_id)
+
+    if not user_data:
+        await interaction.followup.send(
+            "❌ You do not have a pirate job. "
+            "Use `/jobs` and `/choosejob` first.",
+            ephemeral=True
+        )
+        return
+
+    job_key = user_data.get("job")
+    job_data = settings.get(
+        "jobs",
+        {}
+    ).get(job_key)
+
+    if not job_data or not job_data.get("enabled", True):
+        await interaction.followup.send(
+            "❌ Your selected job is no longer available.",
+            ephemeral=True
+        )
+        return
+
+    cooldown = max(
+        0,
+        int(settings.get("daily_cooldown", 86400))
+    )
+
+    remaining = seconds_until_job_ready(
+        user_data.get("last_worked"),
+        cooldown
+    )
+
+    if remaining > 0:
+        await interaction.followup.send(
+            "⏳ Your crew is still recovering from the last voyage. "
+            f"Try again in **{format_job_cooldown(remaining)}**.",
+            ephemeral=True
+        )
+        return
+
+    level = max(
+        1,
+        int(user_data.get("level", 1))
+    )
+
+    base_pay = random.randint(
+        int(job_data.get("min_pay", 0)),
+        int(job_data.get("max_pay", 0))
+    )
+
+    level_bonus = (
+        level
+        * int(settings.get("level_pay_bonus", 25))
+    )
+
+    reward = max(
+        0,
+        base_pay + level_bonus
+    )
+
+    risk = max(
+        0,
+        min(
+            100,
+            int(job_data.get("risk", 0))
+        )
+    )
+
+    failed = (
+        risk > 0
+        and random.randint(1, 100) <= risk
+    )
+
+    user_data["last_worked"] = time.time()
+
+    if failed:
+        loss = min(
+            reward,
+            get_bank().get(
+                user_id,
+                {}
+            ).get(
+                "wallet",
+                0
+            )
+        )
+
+        if loss > 0:
+            update_bank(
+                interaction.user.id,
+                -loss
+            )
+
+        user_data["failed_jobs"] = (
+            int(user_data.get("failed_jobs", 0))
+            + 1
+        )
+
+        embed = discord.Embed(
+            title="🌊 Voyage Failed",
+            description=(
+                f"{interaction.user.mention}, disaster struck "
+                f"during your voyage as a "
+                f"**{job_data.get('name', job_key.title())}**."
+            ),
+            colour=discord.Colour.red()
+        )
+
+        embed.add_field(
+            name="Treasure lost",
+            value=f"${loss:,}",
+            inline=True
+        )
+
+        embed.add_field(
+            name="Risk",
+            value=f"{risk}%",
+            inline=True
+        )
+
+    else:
+        update_bank(
+            interaction.user.id,
+            reward
+        )
+
+        xp_min = max(
+            1,
+            int(settings.get("xp_min", 20))
+        )
+
+        xp_max = max(
+            xp_min,
+            int(settings.get("xp_max", 45))
+        )
+
+        gained_xp = random.randint(
+            xp_min,
+            xp_max
+        )
+
+        user_data["xp"] = (
+            int(user_data.get("xp", 0))
+            + gained_xp
+        )
+
+        user_data["total_earned"] = (
+            int(user_data.get("total_earned", 0))
+            + reward
+        )
+
+        user_data["successful_jobs"] = (
+            int(user_data.get("successful_jobs", 0))
+            + 1
+        )
+
+        levels_gained = 0
+
+        while (
+            user_data["xp"]
+            >= job_level_requirement(
+                user_data["level"]
+            )
+        ):
+            user_data["xp"] -= job_level_requirement(
+                user_data["level"]
+            )
+
+            user_data["level"] += 1
+            levels_gained += 1
+
+        embed = discord.Embed(
+            title="🏴‍☠️ Voyage Complete",
+            description=(
+                f"{interaction.user.mention} completed a voyage "
+                f"as a **{job_data.get('name', job_key.title())}**."
+            ),
+            colour=discord.Colour.gold()
+        )
+
+        embed.add_field(
+            name="Treasure earned",
+            value=f"${reward:,}",
+            inline=True
+        )
+
+        embed.add_field(
+            name="Experience",
+            value=f"+{gained_xp} XP",
+            inline=True
+        )
+
+        embed.add_field(
+            name="Current level",
+            value=str(user_data["level"]),
+            inline=True
+        )
+
+        if levels_gained:
+            embed.add_field(
+                name="🎉 Promotion",
+                value=(
+                    f"You gained **{levels_gained}** level"
+                    f"{'s' if levels_gained != 1 else ''}!"
+                ),
+                inline=False
+            )
+
+    guild_users[user_id] = user_data
+    save_jobs_users(users_data)
+
+    await interaction.followup.send(
+        embed=embed
+    )
+
+
+# ---------------------------------------------------------
+# /jobinfo
+# ---------------------------------------------------------
+
+@tree.command(
+    name="jobinfo",
+    description="View your pirate career progress"
+)
+@app_commands.describe(
+    user="Member to inspect, or leave blank for yourself"
+)
+async def jobinfo(
+    interaction: discord.Interaction,
+    user: discord.Member | None = None
+):
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            "❌ This command can only be used in a server.",
+            ephemeral=True
+        )
+        return
+
+    target = user or interaction.user
+
+    settings = get_guild_jobs_config(
+        interaction.guild.id
+    )
+
+    users_data = load_jobs_users()
+    user_data = (
+        users_data.get("guilds", {})
+        .get(str(interaction.guild.id), {})
+        .get(str(target.id))
+    )
+
+    if not user_data:
+        await interaction.response.send_message(
+            f"❌ {target.mention} does not have a pirate job.",
+            ephemeral=True
+        )
+        return
+
+    job_key = user_data.get("job")
+    job_data = settings.get(
+        "jobs",
+        {}
+    ).get(
+        job_key,
+        {
+            "name": job_key.title(),
+            "emoji": "⚓",
+            "min_pay": 0,
+            "max_pay": 0,
+            "risk": 0
+        }
+    )
+
+    level = max(
+        1,
+        int(user_data.get("level", 1))
+    )
+
+    current_xp = max(
+        0,
+        int(user_data.get("xp", 0))
+    )
+
+    required_xp = job_level_requirement(
+        level
+    )
+
+    embed = discord.Embed(
+        title="📜 Pirate Career Record",
+        description=target.mention,
+        colour=discord.Colour.dark_red()
+    )
+
+    embed.set_thumbnail(
+        url=target.display_avatar.url
+    )
+
+    embed.add_field(
+        name="Career",
+        value=(
+            f"{job_data.get('emoji', '⚓')} "
+            f"{job_data.get('name', job_key.title())}"
+        ),
+        inline=True
+    )
+
+    embed.add_field(
+        name="Level",
+        value=str(level),
+        inline=True
+    )
+
+    embed.add_field(
+        name="Risk",
+        value=f"{int(job_data.get('risk', 0))}%",
+        inline=True
+    )
+
+    embed.add_field(
+        name="Experience",
+        value=(
+            f"{current_xp}/{required_xp} XP\n"
+            f"{job_progress_bar(current_xp, required_xp)}"
+        ),
+        inline=False
+    )
+
+    embed.add_field(
+        name="Total treasure earned",
+        value=f"${int(user_data.get('total_earned', 0)):,}",
+        inline=True
+    )
+
+    embed.add_field(
+        name="Successful voyages",
+        value=str(
+            int(user_data.get("successful_jobs", 0))
+        ),
+        inline=True
+    )
+
+    embed.add_field(
+        name="Failed voyages",
+        value=str(
+            int(user_data.get("failed_jobs", 0))
+        ),
+        inline=True
+    )
+
+    await interaction.response.send_message(
+        embed=embed
+    )
+
+
+# ---------------------------------------------------------
+# /jobleaderboard
+# ---------------------------------------------------------
+
+@tree.command(
+    name="jobleaderboard",
+    description="View the server's top pirate workers"
+)
+async def jobleaderboard(
+    interaction: discord.Interaction
+):
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            "❌ This command can only be used in a server.",
+            ephemeral=True
+        )
+        return
+
+    users_data = load_jobs_users()
+
+    guild_users = (
+        users_data.get("guilds", {})
+        .get(str(interaction.guild.id), {})
+    )
+
+    ranked = sorted(
+        guild_users.items(),
+        key=lambda item: (
+            int(item[1].get("level", 1)),
+            int(item[1].get("total_earned", 0))
+        ),
+        reverse=True
+    )[:10]
+
+    embed = discord.Embed(
+        title="🏆 Pirate Jobs Leaderboard",
+        colour=discord.Colour.gold()
+    )
+
+    if not ranked:
+        embed.description = (
+            "No pirate workers have started a career yet."
+        )
+
+    settings = get_guild_jobs_config(
+        interaction.guild.id
+    )
+
+    for position, (user_id, user_data) in enumerate(
+        ranked,
+        start=1
+    ):
+        member = interaction.guild.get_member(
+            int(user_id)
+        )
+
+        member_name = (
+            member.display_name
+            if member
+            else f"Unknown Pirate ({user_id})"
+        )
+
+        job_key = user_data.get(
+            "job",
+            "unknown"
+        )
+
+        job_data = settings.get(
+            "jobs",
+            {}
+        ).get(
+            job_key,
+            {
+                "name": job_key.title(),
+                "emoji": "⚓"
+            }
+        )
+
+        embed.add_field(
+            name=f"#{position} — {member_name}",
+            value=(
+                f"{job_data.get('emoji', '⚓')} "
+                f"**{job_data.get('name', job_key.title())}**\n"
+                f"Level {int(user_data.get('level', 1))} • "
+                f"${int(user_data.get('total_earned', 0)):,} earned"
+            ),
+            inline=False
+        )
+
+    await interaction.response.send_message(
+        embed=embed
+    )
 
 # ---------- JSON HELPERS ----------
 def load_jobs():
@@ -309,254 +1989,1315 @@ def load_activity():
 def save_activity(data):
     with open(ACTIVITY_FILE, "w") as f:
         json.dump(data, f, indent=4)
+        
+@bot.check
+async def check_prefix_command_permissions(
+    ctx
+):
+    if ctx.guild is None:
+        return True
 
-# ---------- ACTIVITY TRACKING ----------
+    if ctx.command is None:
+        return True
+
+    command_name = (
+        ctx.command.qualified_name
+        .split(" ")[0]
+        .lower()
+    )
+
+    access = get_command_access(
+        ctx.guild.id,
+        command_name
+    )
+
+    if access == "disabled":
+        await ctx.send(
+            "❌ This command is disabled in this server."
+        )
+        return False
+
+    if access == "staff":
+        if not member_is_command_staff(
+            ctx.author
+        ):
+            await ctx.send(
+                "❌ This command is restricted to staff."
+            )
+            return False
+
+    return True
+
+
+async def check_slash_command_permissions(
+    interaction
+):
+    if interaction.guild is None:
+        return True
+
+    command = interaction.command
+
+    if command is None:
+        return True
+
+    command_name = str(
+        command.name
+    ).lower()
+
+    access = get_command_access(
+        interaction.guild.id,
+        command_name
+    )
+
+    if access == "disabled":
+        if not interaction.response.is_done():
+            await interaction.response.send_message(
+                "❌ This command is disabled in this server.",
+                ephemeral=True
+            )
+        return False
+
+    if access == "staff":
+        if not member_is_command_staff(
+            interaction.user
+        ):
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "❌ This command is restricted to staff.",
+                    ephemeral=True
+                )
+            return False
+
+    return True
+
+
+bot.tree.interaction_check = (
+    check_slash_command_permissions
+)
+    
+# =========================================================
+# MESSAGE EVENT
+# =========================================================
+
 @bot.event
 async def on_message(message):
     if message.author.bot or not message.guild:
         return
 
+    guild_id = str(message.guild.id)
+
+    data = load_json(
+        MODERATION_FILE,
+        {
+            "guilds": {}
+        }
+    )
+
+    moderation = (
+        data.get("guilds", {})
+        .get(guild_id, {})
+    )
+
+    automod = moderation.get(
+        "automod",
+        {}
+    )
+
+    if (
+        moderation.get("enabled")
+        and automod.get("enabled")
+    ):
+        content_lower = message.content.lower()
+        should_delete = False
+        reason = ""
+
+        discord_invite_regex = re.compile(
+            r"(?:https?://)?(?:www\.)?"
+            r"(?:discord(?:app)?\.com/invite|discord\.gg)/\S+",
+            re.IGNORECASE
+        )
+
+        invite_match = discord_invite_regex.search(
+            message.content
+        )
+
+        # Discord invite filter
+        if (
+            automod.get("anti_discord_links")
+            and invite_match
+        ):
+            detected_invite = (
+                invite_match.group(0)
+                .lower()
+                .replace("https://", "")
+                .replace("http://", "")
+                .replace("www.", "")
+                .rstrip("/")
+            )
+
+            allowed_invites = [
+                str(invite)
+                .lower()
+                .replace("https://", "")
+                .replace("http://", "")
+                .replace("www.", "")
+                .rstrip("/")
+                for invite in automod.get(
+                    "allowed_discord_invites",
+                    []
+                )
+            ]
+
+            if detected_invite not in allowed_invites:
+                should_delete = True
+                reason = (
+                    "That Discord invite is not allowed."
+                )
+
+        # Banned word filter
+        if automod.get("word_filter"):
+            banned_words = automod.get(
+                "banned_words",
+                []
+            )
+
+            for banned_word in banned_words:
+                banned_word = str(
+                    banned_word
+                ).strip().lower()
+
+                if (
+                    banned_word
+                    and banned_word in content_lower
+                ):
+                    should_delete = True
+                    reason = (
+                        "That message contains "
+                        "a filtered word or phrase."
+                    )
+                    break
+
+        # Basic spam filter
+        if (
+            automod.get("anti_spam")
+            and len(message.content) > 1200
+        ):
+            should_delete = True
+            reason = (
+                "That message was detected as spam."
+            )
+
+        if should_delete:
+            try:
+                await message.delete()
+
+                warning = await message.channel.send(
+                    f"{message.author.mention} ⚠️ {reason}"
+                )
+
+                await asyncio.sleep(4)
+                await warning.delete()
+
+            except discord.Forbidden:
+                pass
+
+            except discord.NotFound:
+                pass
+
+            return
+
+    # Update activity tracking
     activity = load_activity()
     uid = str(message.author.id)
 
-    activity.setdefault(uid, {"messages": 0})
-    activity[uid]["messages"] += 1
+    activity.setdefault(
+        uid,
+        {
+            "messages": 0
+        }
+    )
 
+    activity[uid]["messages"] += 1
     save_activity(activity)
+
+    # Repost the configured sticky message
+    await process_sticky_message(message)
+
+    # Allow prefix commands to continue working
     await bot.process_commands(message)
 
-# ---------- /job ----------
-@tree.command(name="job", description="Choose a job")
-@app_commands.describe(job="doctor / policeman / crimeboss")
-async def job(interaction: discord.Interaction, job: str):
-    job = job.lower()
-    if job not in JOBS:
-        return await interaction.response.send_message("❌ Invalid job choice.")
 
-    jobs = load_jobs()
-    uid = str(interaction.user.id)
-
-    jobs[uid] = {
-        "job": job,
-        "level": 1,
-        "xp": 0,
-        "last_daily": None
-    }
-
-    save_jobs(jobs)
-    await interaction.response.send_message(f"💼 You are now a **{JOBS[job]['name']}**!")
+sticky_locks = {}
 
 
-# -------- Your existing imports and data functions --------
-# load_jobs(), save_jobs(), update_bank(), JOBS, JOB_ROLES, level_requirement()
+async def process_sticky_message(
+    message: discord.Message
+):
+    if not message.guild:
+        return
 
-# -------- /dailyjob command --------
-@tree.command(name="dailyjob", description="Collect your daily salary")
-async def dailyjob(interaction: discord.Interaction):
-    # Defer response to prevent "interaction failed"
-    await interaction.response.defer()
-
-    uid = str(interaction.user.id)
-    jobs = load_jobs()
-
-    # Check if user has a job
-    if uid not in jobs:
-        return await interaction.followup.send("❌ You don't have a job.")
-
-    data = jobs[uid]
-    today = datetime.now().strftime("%Y-%m-%d")
-
-    # Check daily cooldown
-    if data.get("last_daily") == today:
-        return await interaction.followup.send("⏳ You have already claimed your daily salary today.")
-
-    job = JOBS.get(data["job"])
-    if not job:
-        return await interaction.followup.send("❌ Your job data is invalid.")
-
-    # Calculate salary
-    salary = random.randint(job["min"], job["max"]) + (data.get("level", 1) * 50)
-
-    # Determine success/failure based on job risk
-    if job.get("risk", 0) > 0 and random.random() < job["risk"]:
-        update_bank(interaction.user.id, -salary)
-        msg = f"💥 Job failed! You lost **${salary}**."
-    else:
-        update_bank(interaction.user.id, salary)
-        msg = f"💰 You earned **${salary}** from your job today!"
-
-    # Add XP and handle leveling
-    data["xp"] = data.get("xp", 0) + random.randint(25, 50)
-    leveled = False
-
-    while data["xp"] >= level_requirement(data.get("level", 1)):
-        data["xp"] -= level_requirement(data.get("level", 1))
-        data["level"] = data.get("level", 1) + 1
-        leveled = True
-
-        # Handle promotion role assignment
-        role_name = JOB_ROLES.get(data["job"], {}).get(data["level"])
-        if role_name and interaction.guild:
-            role = discord.utils.get(interaction.guild.roles, name=role_name)
-            if role:
-                try:
-                    await interaction.user.add_roles(role)
-                except discord.Forbidden:
-                    await interaction.followup.send(f"⚠ Could not assign role `{role_name}` due to permissions.")
-
-        # Send promotion embed
-        if interaction.guild:
-            embed = discord.Embed(
-                title="💸 Promotion!",
-                description=f"{interaction.user.mention} has been promoted to **Level {data['level']}**!",
-                color=discord.Color.green()
-            )
-            await interaction.followup.send(embed=embed)
-
-    # Update last_daily and save
-    data["last_daily"] = today
-    save_jobs(jobs)
-
-    # Send main salary message
-    await interaction.followup.send(msg)
-# ---------- /jobinfo ----------
-@tree.command(name="jobinfo", description="View your job progress")
-async def jobinfo(interaction: discord.Interaction):
-    jobs = load_jobs()
-    activity = load_activity()
-    uid = str(interaction.user.id)
-
-    if uid not in jobs:
-        return await interaction.response.send_message("❌ You don't have a job.")
-
-    data = jobs[uid]
-    job = JOBS[data["job"]]
-    xp_needed = level_requirement(data["level"])
-    progress = min(int((data["xp"] / xp_needed) * 10), 10)
-    bar = "🟩" * progress + "⬜" * (10 - progress)
-
-    embed = discord.Embed(title="💼 Job Info", color=discord.Color.blue())
-    embed.add_field(name="Job", value=job["name"], inline=True)
-    embed.add_field(name="Level", value=data["level"], inline=True)
-    embed.add_field(name="XP", value=f"{data['xp']} / {xp_needed}", inline=False)
-    embed.add_field(name="Progress", value=bar, inline=False)
-    embed.add_field(
-        name="Salary",
-        value=f"${job['min']} - ${job['max']} (+50 per level)",
-        inline=True
+    data = load_json(
+        STICKY_FILE,
+        {
+            "guilds": {}
+        }
     )
-    embed.add_field(
-        name="Risk",
-        value=f"{int(job.get('risk',0)*100)}%",
-        inline=True
+
+    guild_data = (
+        data.get("guilds", {})
+        .get(str(message.guild.id), {})
     )
-    embed.add_field(
-        name="Activity",
-        value=f"💬 Messages: {activity.get(uid, {}).get('messages', 0)}",
-        inline=False
+
+    channels = guild_data.get(
+        "channels",
+        {}
     )
-    embed.add_field(name="Last Daily Claim", value=data.get("last_daily", "Never"), inline=False)
 
-    await interaction.response.send_message(embed=embed)
+    sticky = channels.get(
+        str(message.channel.id)
+    )
 
+    if not sticky or not sticky.get(
+        "enabled",
+        False
+    ):
+        return
 
-# ---------- /jobleaderboard ----------
-@tree.command(name="jobleaderboard", description="Top job workers")
-async def jobleaderboard(interaction: discord.Interaction):
-    jobs = load_jobs()
+    channel_id = message.channel.id
 
-    ranked = sorted(jobs.items(), key=lambda x: x[1]["level"], reverse=True)[:10]
+    if sticky_locks.get(channel_id):
+        return
 
-    embed = discord.Embed(title="🏆 Job Leaderboard", color=discord.Color.gold())
+    sticky_locks[channel_id] = True
 
-    for i, (uid, data) in enumerate(ranked, start=1):
-        member = interaction.guild.get_member(int(uid))
-        name = member.display_name if member else "Unknown"
-
-        embed.add_field(
-            name=f"#{i} {name}",
-            value=f"{JOBS[data['job']]['name']} — Level {data['level']}",
-            inline=False
+    try:
+        old_message_id = sticky.get(
+            "message_id"
         )
 
-    await interaction.response.send_message(embed=embed)
+        if old_message_id:
+            try:
+                old_message = await message.channel.fetch_message(
+                    int(old_message_id)
+                )
 
-# ---------- ADMIN CONFIG ----------
-@tree.command(name="setjobpay", description="Admin: Set job pay & risk")
-@app_commands.checks.has_permissions(administrator=True)
-async def setjobpay(
+                await old_message.delete()
+
+            except (
+                discord.NotFound,
+                discord.Forbidden,
+                ValueError
+            ):
+                pass
+
+        sticky_message = await message.channel.send(
+            sticky.get(
+                "message",
+                "📌 This is a sticky message."
+            )
+        )
+
+        sticky["message_id"] = str(
+            sticky_message.id
+        )
+
+        save_json(
+            STICKY_FILE,
+            data
+        )
+
+    finally:
+        sticky_locks[channel_id] = False
+
+# =========================================================
+# CUSTOM DASHBOARD TICKET SYSTEM
+# =========================================================
+
+DEFAULT_TICKET_DATA = {
+    "enabled": True,
+    "ticket_channel": "",
+    "panel_message_id": "",
+    "selection_type": "buttons",
+    "option_count": 0,
+    "panel": {
+        "title": "🎟 Open a Ticket",
+        "description": "Select the type of ticket you want to open.",
+        "color": "991111",
+        "placeholder": "Choose a ticket type...",
+        "footer": "Pirates Bot Support",
+        "image_url": "",
+        "thumbnail_url": ""
+    },
+    "settings": {
+        "close_message": "🔒 This ticket is now being closed.",
+        "delete_after_close": True
+    },
+    "options": []
+}
+
+
+def load_ticket_settings() -> dict:
+    try:
+        with open(TICKET_FILE, "r", encoding="utf-8") as file:
+            data = json.load(file)
+    except (FileNotFoundError, json.JSONDecodeError):
+        data = {}
+
+    if not isinstance(data, dict):
+        data = {}
+
+    data.setdefault("enabled", True)
+    data.setdefault("ticket_channel", "")
+    data.setdefault("panel_message_id", "")
+    data.setdefault("selection_type", "buttons")
+    data.setdefault("option_count", 0)
+    data.setdefault("panel", {})
+    data.setdefault("settings", {})
+    data.setdefault("options", [])
+
+    panel = data["panel"]
+    panel.setdefault("title", "🎟 Open a Ticket")
+    panel.setdefault(
+        "description",
+        "Select the type of ticket you want to open."
+    )
+    panel.setdefault("color", "991111")
+    panel.setdefault("placeholder", "Choose a ticket type...")
+    panel.setdefault("footer", "Pirates Bot Support")
+    panel.setdefault("image_url", "")
+    panel.setdefault("thumbnail_url", "")
+
+    settings = data["settings"]
+    settings.setdefault(
+        "close_message",
+        "🔒 This ticket is now being closed."
+    )
+    settings.setdefault("delete_after_close", True)
+
+    if not isinstance(data["options"], list):
+        data["options"] = []
+
+    return data
+
+
+def save_ticket_settings(data: dict) -> None:
+    with open(TICKET_FILE, "w", encoding="utf-8") as file:
+        json.dump(
+            data,
+            file,
+            indent=4,
+            ensure_ascii=False
+        )
+
+
+def clean_ticket_channel_name(value: str) -> str:
+    value = str(value or "").lower().strip()
+    value = re.sub(r"[^a-z0-9-]", "-", value)
+    value = re.sub(r"-+", "-", value)
+    return value.strip("-")[:90] or "ticket"
+
+
+def ticket_button_style(value: str):
+    styles = {
+        "blue": discord.ButtonStyle.primary,
+        "green": discord.ButtonStyle.success,
+        "red": discord.ButtonStyle.danger,
+        "grey": discord.ButtonStyle.secondary,
+        "gray": discord.ButtonStyle.secondary
+    }
+
+    return styles.get(
+        str(value).lower(),
+        discord.ButtonStyle.secondary
+    )
+
+
+def active_ticket_options():
+    data = load_ticket_settings()
+
+    return [
+        (index, option)
+        for index, option in enumerate(
+            data.get("options", [])
+        )
+        if option.get("enabled", True)
+    ]
+  
+async def create_dashboard_ticket(
     interaction: discord.Interaction,
-    job: str,
-    min_pay: int,
-    max_pay: int,
-    risk: float = 0.0
+    option_index: int
 ):
-    job = job.lower()
-    if job not in JOBS:
-        return await interaction.response.send_message("❌ Invalid job.")
+    ticket_data = load_ticket_settings()
+    options = ticket_data.get("options", [])
 
-    JOBS[job]["min"] = min_pay
-    JOBS[job]["max"] = max_pay
-    JOBS[job]["risk"] = risk
+    if option_index < 0 or option_index >= len(options):
+        await interaction.response.send_message(
+            "❌ This ticket option no longer exists.",
+            ephemeral=True
+        )
+        return
 
-    await interaction.response.send_message("✅ Job settings updated.")
+    option = options[option_index]
 
-    # ------------------- TICKET SYSTEM -------------------
-class TicketView(discord.ui.View):
+    if not option.get("enabled", True):
+        await interaction.response.send_message(
+            "❌ This ticket option is currently disabled.",
+            ephemeral=True
+        )
+        return
+
+    guild = interaction.guild
+    user = interaction.user
+
+    if guild is None:
+        await interaction.response.send_message(
+            "❌ Tickets can only be opened inside a server.",
+            ephemeral=True
+        )
+        return
+
+    ticket_type = clean_ticket_channel_name(
+        option.get("name", f"ticket-{option_index + 1}")
+    )
+
+    ticket_topic = (
+        f"pirates-ticket:"
+        f"{option_index}:"
+        f"{user.id}"
+    )
+
+    existing_ticket = discord.utils.find(
+        lambda channel: (
+            isinstance(channel, discord.TextChannel)
+            and channel.topic == ticket_topic
+        ),
+        guild.text_channels
+    )
+
+    if existing_ticket:
+        await interaction.response.send_message(
+            f"❌ You already have this ticket open: "
+            f"{existing_ticket.mention}",
+            ephemeral=True
+        )
+        return
+
+    category = None
+
+    category_id = str(
+        option.get("category_id", "")
+    ).strip()
+
+    if category_id.isdigit():
+        possible_category = guild.get_channel(
+            int(category_id)
+        )
+
+        if isinstance(
+            possible_category,
+            discord.CategoryChannel
+        ):
+            category = possible_category
+
+    if category is None:
+        category_name = str(
+            option.get("category_name", "Tickets")
+        ).strip() or "Tickets"
+
+        category = discord.utils.get(
+            guild.categories,
+            name=category_name
+        )
+
+        if category is None:
+            category = await guild.create_category(
+                category_name,
+                reason="Pirates Bot ticket category"
+            )
+
+    bot_member = guild.me
+
+    overwrites = {
+        guild.default_role: discord.PermissionOverwrite(
+            view_channel=False
+        ),
+        user: discord.PermissionOverwrite(
+            view_channel=True,
+            send_messages=True,
+            read_message_history=True,
+            attach_files=True
+        )
+    }
+
+    if bot_member is not None:
+        overwrites[bot_member] = (
+            discord.PermissionOverwrite(
+                view_channel=True,
+                send_messages=True,
+                read_message_history=True,
+                manage_channels=True,
+                manage_messages=True
+            )
+        )
+
+    staff_role = None
+
+    staff_role_id = str(
+        option.get("staff_role_id", "")
+    ).strip()
+
+    if staff_role_id.isdigit():
+        staff_role = guild.get_role(
+            int(staff_role_id)
+        )
+
+    if staff_role is not None:
+        overwrites[staff_role] = (
+            discord.PermissionOverwrite(
+                view_channel=True,
+                send_messages=True,
+                read_message_history=True,
+                manage_messages=True
+            )
+        )
+
+    channel_prefix = clean_ticket_channel_name(
+        option.get("channel_prefix")
+        or option.get("name")
+        or "ticket"
+    )
+
+    channel_name = clean_ticket_channel_name(
+        f"{channel_prefix}-{user.display_name}"
+    )
+
+    channel = await guild.create_text_channel(
+        name=channel_name,
+        category=category,
+        topic=ticket_topic,
+        overwrites=overwrites,
+        reason=(
+            f"{option.get('name', 'Ticket')} "
+            f"opened by {user}"
+        )
+    )
+
+    opening_message = str(
+        option.get(
+            "opening_message",
+            "Welcome {user}. Please explain how we can help."
+        )
+    )
+
+    opening_message = opening_message.replace(
+        "{user}",
+        user.mention
+    )
+
+    opening_message = opening_message.replace(
+        "{type}",
+        str(option.get("name", "Ticket"))
+    )
+
+    embed = discord.Embed(
+        title=(
+            f"{option.get('emoji', '🎟')} "
+            f"{option.get('name', 'Ticket')}"
+        ),
+        description=opening_message,
+        colour=parse_colour(
+            option.get("embed_color", "991111")
+        )
+    )
+
+    embed.add_field(
+        name="Opened by",
+        value=user.mention,
+        inline=True
+    )
+
+    embed.add_field(
+        name="Ticket type",
+        value=str(
+            option.get("name", "Ticket")
+        ),
+        inline=True
+    )
+
+    embed.set_footer(
+        text="Use the button below when the ticket is resolved."
+    )
+
+    mentions = [user.mention]
+
+    if staff_role is not None:
+        mentions.append(staff_role.mention)
+
+    await channel.send(
+        content=" ".join(mentions),
+        embed=embed,
+        view=CloseTicketView()
+    )
+
+    await interaction.response.send_message(
+        f"✅ Your ticket was created: "
+        f"{channel.mention}",
+        ephemeral=True
+    )
+class TicketButton(discord.ui.Button):
+    def __init__(
+        self,
+        option_index: int,
+        option: dict,
+        row: int
+    ):
+        super().__init__(
+            label=str(
+                option.get(
+                    "name",
+                    f"Ticket {option_index + 1}"
+                )
+            )[:80],
+            emoji=option.get("emoji") or None,
+            style=ticket_button_style(
+                option.get("button_color", "grey")
+            ),
+            custom_id=f"pirates:ticket:{option_index}",
+            row=row
+        )
+
+        self.option_index = option_index
+
+    async def callback(
+        self,
+        interaction: discord.Interaction
+    ):
+        await create_dashboard_ticket(
+            interaction,
+            self.option_index
+        )
+
+
+class TicketButtonsView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="🎫 Create Ticket", style=discord.ButtonStyle.green)
-    async def create_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        guild = interaction.guild
-        user = interaction.user
+        enabled_options = active_ticket_options()
 
-        category = discord.utils.get(guild.categories, name=TICKET_CATEGORY_NAME)
-        if category is None:
-            category = await guild.create_category(TICKET_CATEGORY_NAME)
+        for display_index, (
+            option_index,
+            option
+        ) in enumerate(enabled_options[:25]):
 
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            user: discord.PermissionOverwrite(view_channel=True, send_messages=True),
-            guild.me: discord.PermissionOverwrite(view_channel=True)
-        }
+            row = display_index // 5
 
-        for role_name in STAFF_ROLES:
-            role = discord.utils.get(guild.roles, name=role_name)
-            if role:
-                overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+            self.add_item(
+                TicketButton(
+                    option_index=option_index,
+                    option=option,
+                    row=row
+                )
+            )
 
-        channel = await guild.create_text_channel(
-            name=f"ticket-{user.name}",
-            category=category,
-            overwrites=overwrites
+
+class TicketDropdown(discord.ui.Select):
+    def __init__(self):
+        ticket_data = load_ticket_settings()
+        panel = ticket_data.get("panel", {})
+
+        dropdown_options = []
+
+        for option_index, option in active_ticket_options():
+            dropdown_options.append(
+                discord.SelectOption(
+                    label=str(
+                        option.get(
+                            "name",
+                            f"Ticket {option_index + 1}"
+                        )
+                    )[:100],
+                    value=str(option_index),
+                    description=str(
+                        option.get(
+                            "description",
+                            "Open this ticket"
+                        )
+                    )[:100],
+                    emoji=option.get("emoji") or None
+                )
+            )
+
+        if not dropdown_options:
+            dropdown_options.append(
+                discord.SelectOption(
+                    label="No ticket options configured",
+                    value="none",
+                    description=(
+                        "Configure ticket options "
+                        "from the dashboard"
+                    ),
+                    emoji="⚠️"
+                )
+            )
+
+        super().__init__(
+            placeholder=str(
+                panel.get(
+                    "placeholder",
+                    "Choose a ticket type..."
+                )
+            )[:150],
+            min_values=1,
+            max_values=1,
+            options=dropdown_options[:25],
+            custom_id="pirates:ticket_dropdown"
         )
 
-        await channel.send(
-            f"{user.mention} Welcome! Describe your issue.\nPress 🔒 to close.",
-            view=CloseView()
+    async def callback(
+        self,
+        interaction: discord.Interaction
+    ):
+        selected_value = self.values[0]
+
+        if selected_value == "none":
+            await interaction.response.send_message(
+                "❌ No ticket options are configured.",
+                ephemeral=True
+            )
+            return
+
+        await create_dashboard_ticket(
+            interaction,
+            int(selected_value)
+        )
+
+
+class TicketDropdownView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(TicketDropdown())
+
+
+class CloseTicketButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(
+            label="Close Ticket",
+            emoji="🔒",
+            style=discord.ButtonStyle.danger,
+            custom_id="pirates:close_ticket"
+        )
+
+    async def callback(
+        self,
+        interaction: discord.Interaction
+    ):
+        channel = interaction.channel
+
+        if not isinstance(
+            channel,
+            discord.TextChannel
+        ):
+            await interaction.response.send_message(
+                "❌ This button only works in ticket channels.",
+                ephemeral=True
+            )
+            return
+
+        if not (
+            channel.topic
+            and channel.topic.startswith(
+                "pirates-ticket:"
+            )
+        ):
+            await interaction.response.send_message(
+                "❌ This is not a Pirates Bot ticket channel.",
+                ephemeral=True
+            )
+            return
+
+        ticket_data = load_ticket_settings()
+        settings = ticket_data.get("settings", {})
+
+        close_message = str(
+            settings.get(
+                "close_message",
+                "🔒 This ticket is now being closed."
+            )
+        )
+
+        delete_after_close = settings.get(
+            "delete_after_close",
+            True
         )
 
         await interaction.response.send_message(
-            f"✅ Ticket created: {channel.mention}",
+            close_message
+        )
+
+        if delete_after_close:
+            await asyncio.sleep(3)
+
+            try:
+                await channel.delete(
+                    reason=(
+                        "Pirates Bot ticket closed by "
+                        f"{interaction.user}"
+                    )
+                )
+            except discord.Forbidden:
+                await interaction.followup.send(
+                    "❌ I do not have permission "
+                    "to delete this channel.",
+                    ephemeral=True
+                )
+
+        else:
+            closed_name = clean_ticket_channel_name(
+                f"closed-{channel.name}"
+            )
+
+            try:
+                await channel.edit(
+                    name=closed_name,
+                    reason=(
+                        "Pirates Bot ticket closed by "
+                        f"{interaction.user}"
+                    )
+                )
+
+                for member, overwrite in (
+                    channel.overwrites.items()
+                ):
+                    if isinstance(member, discord.Member):
+                        if member.id != interaction.guild.me.id:
+                            overwrite.send_messages = False
+
+                            await channel.set_permissions(
+                                member,
+                                overwrite=overwrite
+                            )
+
+            except discord.Forbidden:
+                await interaction.followup.send(
+                    "❌ I do not have permission "
+                    "to lock this channel.",
+                    ephemeral=True
+                )
+
+
+class CloseTicketView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(CloseTicketButton())
+# =========================================================
+# AUTO ANNOUNCEMENTS
+# =========================================================
+
+@tasks.loop(minutes=1)
+async def auto_announcement_loop():
+    data = load_json(
+        ANNOUNCEMENTS_FILE,
+        {
+            "guilds": {}
+        }
+    )
+
+    changed = False
+    current_time = datetime.now(
+        timezone.utc
+    ).timestamp()
+
+    for guild_id, guild_data in data.get(
+        "guilds",
+        {}
+    ).items():
+        if not guild_data.get(
+            "enabled",
+            False
+        ):
+            continue
+
+        for announcement in guild_data.get(
+            "announcements",
+            []
+        ):
+            if not announcement.get(
+                "enabled",
+                False
+            ):
+                continue
+
+            interval = max(
+                60,
+                int(
+                    announcement.get(
+                        "interval",
+                        3600
+                    )
+                )
+            )
+
+            last_sent = float(
+                announcement.get(
+                    "last_sent",
+                    0
+                )
+            )
+
+            if (
+                current_time - last_sent
+                < interval
+            ):
+                continue
+
+            try:
+                guild = bot.get_guild(
+                    int(guild_id)
+                )
+
+                if not guild:
+                    continue
+
+                channel = guild.get_channel(
+                    int(
+                        announcement.get(
+                            "channel_id",
+                            0
+                        )
+                    )
+                )
+
+                if not channel:
+                    continue
+
+                await channel.send(
+                    announcement.get(
+                        "message",
+                        "📢 Announcement"
+                    )
+                )
+
+                announcement["last_sent"] = (
+                    current_time
+                )
+
+                changed = True
+
+            except (
+                TypeError,
+                ValueError,
+                discord.Forbidden,
+                discord.HTTPException
+            ):
+                continue
+
+    if changed:
+        save_json(
+            ANNOUNCEMENTS_FILE,
+            data
+        )
+
+
+@auto_announcement_loop.before_loop
+async def before_auto_announcements():
+    await bot.wait_until_ready()
+    # =========================================================
+# REMINDER COMMAND
+# =========================================================
+
+@tree.command(
+    name="remindme",
+    description="Create a personal reminder"
+)
+@app_commands.describe(
+    minutes="How many minutes until the reminder",
+    message="What should I remind you about?"
+)
+async def remindme(
+    interaction: discord.Interaction,
+    minutes: app_commands.Range[int, 1, 10080],
+    message: str
+):
+    reminder_data = load_json(
+        REMINDERS_FILE,
+        {
+            "reminders": []
+        }
+    )
+
+    reminders = reminder_data.setdefault(
+        "reminders",
+        []
+    )
+
+    reminder_id = secrets.token_hex(8)
+
+    due_at = (
+        time.time()
+        + minutes * 60
+    )
+
+    reminders.append({
+        "id": reminder_id,
+        "guild_id": (
+            str(interaction.guild.id)
+            if interaction.guild
+            else None
+        ),
+        "channel_id": str(
+            interaction.channel_id
+        ),
+        "user_id": str(
+            interaction.user.id
+        ),
+        "message": message[:1000],
+        "due_at": due_at
+    })
+
+    save_json(
+        REMINDERS_FILE,
+        reminder_data
+    )
+
+    await interaction.response.send_message(
+        (
+            f"⏰ I will remind you in "
+            f"**{minutes} minute"
+            f"{'s' if minutes != 1 else ''}**.\n"
+            f"**Reminder:** {message[:1000]}"
+        ),
+        ephemeral=True
+    )
+    # =========================================================
+# REMINDER LOOP
+# =========================================================
+
+@tasks.loop(seconds=30)
+async def reminder_loop():
+    reminder_data = load_json(
+        REMINDERS_FILE,
+        {
+            "reminders": []
+        }
+    )
+
+    reminders = reminder_data.get(
+        "reminders",
+        []
+    )
+
+    current_time = time.time()
+    remaining_reminders = []
+    changed = False
+
+    for reminder in reminders:
+        due_at = float(
+            reminder.get(
+                "due_at",
+                0
+            )
+        )
+
+        if due_at > current_time:
+            remaining_reminders.append(
+                reminder
+            )
+            continue
+
+        try:
+            channel = bot.get_channel(
+                int(
+                    reminder.get(
+                        "channel_id",
+                        0
+                    )
+                )
+            )
+
+            if channel is None:
+                changed = True
+                continue
+
+            await channel.send(
+                (
+                    f"<@{reminder.get('user_id')}> ⏰ "
+                    f"**Reminder:** "
+                    f"{reminder.get('message', 'No reminder text.')}"
+                )
+            )
+
+            changed = True
+
+        except (
+            TypeError,
+            ValueError,
+            discord.Forbidden,
+            discord.HTTPException
+        ):
+            changed = True
+
+    if changed:
+        reminder_data["reminders"] = (
+            remaining_reminders
+        )
+
+        save_json(
+            REMINDERS_FILE,
+            reminder_data
+        )
+
+
+@reminder_loop.before_loop
+async def before_reminder_loop():
+    await bot.wait_until_ready()
+# =========================================================
+# ROLE MANAGER COMMANDS
+# =========================================================
+
+@tree.command(
+    name="roleadd",
+    description="Admin: Add a role to a member"
+)
+@app_commands.checks.has_permissions(
+    manage_roles=True
+)
+@app_commands.describe(
+    user="Member receiving the role",
+    role="Role to add"
+)
+async def roleadd(
+    interaction: discord.Interaction,
+    user: discord.Member,
+    role: discord.Role
+):
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            "❌ This command can only be used in a server.",
+            ephemeral=True
+        )
+        return
+
+    bot_member = interaction.guild.me
+
+    if bot_member is None:
+        await interaction.response.send_message(
+            "❌ I could not check my role permissions.",
+            ephemeral=True
+        )
+        return
+
+    if role.is_default():
+        await interaction.response.send_message(
+            "❌ The @everyone role cannot be assigned.",
+            ephemeral=True
+        )
+        return
+
+    if role >= bot_member.top_role:
+        await interaction.response.send_message(
+            "❌ I cannot manage that role. Move my bot role above it.",
+            ephemeral=True
+        )
+        return
+
+    if role in user.roles:
+        await interaction.response.send_message(
+            f"❌ {user.mention} already has {role.mention}.",
+            ephemeral=True
+        )
+        return
+
+    try:
+        await user.add_roles(
+            role,
+            reason=(
+                f"Role added by "
+                f"{interaction.user}"
+            )
+        )
+
+        await interaction.response.send_message(
+            f"✅ Added {role.mention} to {user.mention}."
+        )
+
+    except discord.Forbidden:
+        await interaction.response.send_message(
+            "❌ I do not have permission to add that role.",
             ephemeral=True
         )
 
-class CloseView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
 
-    @discord.ui.button(label="🔒 Close Ticket", style=discord.ButtonStyle.red)
-    async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.channel.delete()
+@tree.command(
+    name="roleremove",
+    description="Admin: Remove a role from a member"
+)
+@app_commands.checks.has_permissions(
+    manage_roles=True
+)
+@app_commands.describe(
+    user="Member losing the role",
+    role="Role to remove"
+)
+async def roleremove(
+    interaction: discord.Interaction,
+    user: discord.Member,
+    role: discord.Role
+):
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            "❌ This command can only be used in a server.",
+            ephemeral=True
+        )
+        return
 
-@tree.command(name="ticketpanel", description="Send ticket panel")
-@app_commands.checks.has_permissions(administrator=True)
-async def ticketpanel(interaction: discord.Interaction):
-    await interaction.response.send_message(
-        "Click below to create a ticket:",
-        view=TicketView()
-    )
+    bot_member = interaction.guild.me
+
+    if bot_member is None:
+        await interaction.response.send_message(
+            "❌ I could not check my role permissions.",
+            ephemeral=True
+        )
+        return
+
+    if role.is_default():
+        await interaction.response.send_message(
+            "❌ The @everyone role cannot be removed.",
+            ephemeral=True
+        )
+        return
+
+    if role >= bot_member.top_role:
+        await interaction.response.send_message(
+            "❌ I cannot manage that role. Move my bot role above it.",
+            ephemeral=True
+        )
+        return
+
+    if role not in user.roles:
+        await interaction.response.send_message(
+            f"❌ {user.mention} does not have {role.mention}.",
+            ephemeral=True
+        )
+        return
+
+    try:
+        await user.remove_roles(
+            role,
+            reason=(
+                f"Role removed by "
+                f"{interaction.user}"
+            )
+        )
+
+        await interaction.response.send_message(
+            f"✅ Removed {role.mention} from {user.mention}."
+        )
+
+    except discord.Forbidden:
+        await interaction.response.send_message(
+            "❌ I do not have permission to remove that role.",
+            ephemeral=True
+        )
 # ------------------- ECONOMY -------------------
 @tree.command(name="balance", description="Check balance")
 async def balance(interaction: discord.Interaction):
@@ -567,12 +3308,13 @@ async def balance(interaction: discord.Interaction):
     )
 
 @tree.command(name="work", description="Work to earn money")
-@is_staff()
 @app_commands.checks.cooldown(1, 600)
 async def work(interaction: discord.Interaction):
     earn = random.randint(10, 100)
     update_bank(interaction.user.id, earn)
-    await interaction.response.send_message(f"🛠 You earned ${earn}")
+    await interaction.response.send_message(
+        f"🛠 You earned ${earn}"
+    )
 
 @tree.command(name="daily", description="Claim daily reward")
 @app_commands.checks.cooldown(1, 86400)
@@ -623,6 +3365,191 @@ async def slots(interaction: discord.Interaction, bet: int):
         msg = f"{''.join(result)} ❌ Lost ${bet}"
 
     await interaction.response.send_message(msg)
+    
+    # =========================================================
+# ADMIN ECONOMY COMMANDS
+# =========================================================
+
+ACCOUNT_CHOICES = [
+    app_commands.Choice(
+        name="Cash / Wallet",
+        value="wallet"
+    ),
+    app_commands.Choice(
+        name="Bank",
+        value="bank"
+    )
+]
+
+
+@tree.command(
+    name="addmoney",
+    description="Admin: Add money to a member"
+)
+@app_commands.checks.has_permissions(
+    administrator=True
+)
+@app_commands.describe(
+    user="Member receiving the money",
+    amount="Amount of money to add",
+    account="Choose cash or bank"
+)
+@app_commands.choices(
+    account=ACCOUNT_CHOICES
+)
+async def addmoney(
+    interaction: discord.Interaction,
+    user: discord.Member,
+    amount: int,
+    account: app_commands.Choice[str]
+):
+    if amount <= 0:
+        await interaction.response.send_message(
+            "❌ The amount must be greater than zero.",
+            ephemeral=True
+        )
+        return
+
+    users = get_bank()
+    user_id = str(user.id)
+
+    users.setdefault(
+        user_id,
+        {
+            "wallet": 0,
+            "bank": 0,
+            "last_daily": None
+        }
+    )
+
+    account_key = account.value
+    users[user_id][account_key] = (
+        users[user_id].get(account_key, 0)
+        + amount
+    )
+
+    save_json(
+        "bank.json",
+        users
+    )
+
+    account_name = (
+        "cash"
+        if account_key == "wallet"
+        else "bank"
+    )
+
+    await interaction.response.send_message(
+        f"✅ Added **${amount:,}** to "
+        f"{user.mention}'s **{account_name}**."
+    )
+
+
+@tree.command(
+    name="removemoney",
+    description="Admin: Remove money from a member"
+)
+@app_commands.checks.has_permissions(
+    administrator=True
+)
+@app_commands.describe(
+    user="Member losing the money",
+    amount="Amount of money to remove",
+    account="Choose cash or bank"
+)
+@app_commands.choices(
+    account=ACCOUNT_CHOICES
+)
+async def removemoney(
+    interaction: discord.Interaction,
+    user: discord.Member,
+    amount: int,
+    account: app_commands.Choice[str]
+):
+    if amount <= 0:
+        await interaction.response.send_message(
+            "❌ The amount must be greater than zero.",
+            ephemeral=True
+        )
+        return
+
+    users = get_bank()
+    user_id = str(user.id)
+
+    users.setdefault(
+        user_id,
+        {
+            "wallet": 0,
+            "bank": 0,
+            "last_daily": None
+        }
+    )
+
+    account_key = account.value
+    current_balance = users[user_id].get(
+        account_key,
+        0
+    )
+
+    removed_amount = min(
+        amount,
+        current_balance
+    )
+
+    users[user_id][account_key] = max(
+        0,
+        current_balance - amount
+    )
+
+    save_json(
+        "bank.json",
+        users
+    )
+
+    account_name = (
+        "cash"
+        if account_key == "wallet"
+        else "bank"
+    )
+
+    await interaction.response.send_message(
+        f"✅ Removed **${removed_amount:,}** from "
+        f"{user.mention}'s **{account_name}**."
+    )
+
+@tree.command(
+    name="economywipe",
+    description="Admin: Reset a member's entire economy balance"
+)
+@app_commands.checks.has_permissions(
+    administrator=True
+)
+@app_commands.describe(
+    user="Member whose economy data will be reset"
+)
+async def economywipe(
+    interaction: discord.Interaction,
+    user: discord.Member
+):
+    users = get_bank()
+    user_id = str(user.id)
+
+    users[user_id] = {
+        "wallet": 0,
+        "bank": 0,
+        "last_daily": None
+    }
+
+    save_json(
+        "bank.json",
+        users
+    )
+
+    await interaction.response.send_message(
+        f"🗑️ {user.mention}'s economy data was reset.\n"
+        f"**Cash:** $0\n"
+        f"**Bank:** $0"
+    )
 # ------------------- REACTION ROLES -------------------
 @tree.command(name="setreactionrole")
 async def setreactionrole(
@@ -644,25 +3571,43 @@ async def setreactionrole(
 
 @bot.event
 async def on_raw_reaction_add(payload):
-    roles = get_reaction_roles().get(str(payload.guild_id), {})
-    role_id = roles.get(str(payload.message_id), {}).get(str(payload.emoji))
+    all_roles = get_reaction_roles()
+    role_id = None
+    if "roles" in all_roles:
+        if str(all_roles.get("message_id", "")) == str(payload.message_id):
+            for item in all_roles.get("roles", []):
+                if str(item.get("emoji")) == str(payload.emoji):
+                    role_id = item.get("role_id")
+                    break
+    else:
+        guild_roles = all_roles.get(str(payload.guild_id), {})
+        role_id = guild_roles.get(str(payload.message_id), {}).get(str(payload.emoji))
     if not role_id:
         return
     guild = bot.get_guild(payload.guild_id)
     member = guild.get_member(payload.user_id)
-    role = guild.get_role(role_id)
+    role = guild.get_role(int(role_id)) if str(role_id).isdigit() else None
     if role:
         await member.add_roles(role)
 
 @bot.event
 async def on_raw_reaction_remove(payload):
-    roles = get_reaction_roles().get(str(payload.guild_id), {})
-    role_id = roles.get(str(payload.message_id), {}).get(str(payload.emoji))
+    all_roles = get_reaction_roles()
+    role_id = None
+    if "roles" in all_roles:
+        if str(all_roles.get("message_id", "")) == str(payload.message_id):
+            for item in all_roles.get("roles", []):
+                if str(item.get("emoji")) == str(payload.emoji):
+                    role_id = item.get("role_id")
+                    break
+    else:
+        guild_roles = all_roles.get(str(payload.guild_id), {})
+        role_id = guild_roles.get(str(payload.message_id), {}).get(str(payload.emoji))
     if not role_id:
         return
     guild = bot.get_guild(payload.guild_id)
     member = guild.get_member(payload.user_id)
-    role = guild.get_role(role_id)
+    role = guild.get_role(int(role_id)) if str(role_id).isdigit() else None
     if role:
         await member.remove_roles(role)
 
@@ -935,17 +3880,29 @@ async def removeautorole(interaction: discord.Interaction):
 @bot.event
 async def on_member_join(member):
     # Existing welcome system
-    welcome_data = get_welcome_settings().get(str(member.guild.id))
-    if welcome_data:
-        channel = member.guild.get_channel(welcome_data["channel"])
+    all_welcome = get_welcome_settings()
+    welcome_data = all_welcome.get(str(member.guild.id)) if str(member.guild.id) in all_welcome else all_welcome
+    if welcome_data and welcome_data.get("enabled", True):
+        channel_value = welcome_data.get("channel", welcome_data.get("channel_id", ""))
+        channel = member.guild.get_channel(int(channel_value)) if str(channel_value).isdigit() else None
         if channel:
-            content = welcome_data["message"].replace("{user}", member.mention).replace("{server}", member.guild.name)
-            if welcome_data.get("image"):
-                embed = discord.Embed(description=content, color=discord.Color.green())
-                embed.set_image(url=welcome_data["image"])
+            content = str(welcome_data.get("message", "Welcome {user} to {server}!"))
+            content = content.replace("{user}", member.mention).replace("{server}", member.guild.name)
+            image_url = welcome_data.get("banner_url") or welcome_data.get("image_url") or welcome_data.get("image")
+            if image_url:
+                embed = discord.Embed(description=content, color=discord.Color.red())
+                embed.set_image(url=image_url)
                 await channel.send(embed=embed)
             else:
                 await channel.send(content)
+
+            dm_settings = welcome_data.get("dm", {})
+            if dm_settings.get("enabled"):
+                try:
+                    dm_text = str(dm_settings.get("message", content)).replace("{user}", member.name).replace("{server}", member.guild.name)
+                    await member.send(dm_text)
+                except discord.Forbidden:
+                    pass
 
     # Apply auto role
     autoroles = get_auto_roles()
@@ -1010,12 +3967,360 @@ async def balanceof(interaction: discord.Interaction, member: discord.Member):
         f"Wallet: **${data['wallet']}**\n"
         f"Bank: **${data['bank']}**"
     )
+# ------------------- DASHBOARD LIVE APPLY -------------------
+def _read_config(path, default=None):
+    try:
+        with open(path, "r", encoding="utf-8") as file:
+            return json.load(file)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {} if default is None else default
+
+
+def _write_config(path, data):
+    with open(path, "w", encoding="utf-8") as file:
+        json.dump(data, file, indent=4, ensure_ascii=False)
+
+
+def _find_text_channel(channel_id):
+    value = str(channel_id or "").strip()
+    if not value.isdigit():
+        return None
+    channel = bot.get_channel(int(value))
+    return channel if isinstance(channel, discord.TextChannel) else None
+
+
+async def _send_or_edit(channel, config, message_key, *, content=None, embed=None, view=None):
+    message = None
+    message_id = str(config.get(message_key, "")).strip()
+    if message_id.isdigit():
+        try:
+            message = await channel.fetch_message(int(message_id))
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            message = None
+    if message:
+        await message.edit(content=content, embed=embed, view=view)
+    else:
+        message = await channel.send(content=content, embed=embed, view=view)
+        config[message_key] = str(message.id)
+    return message
+
+
+async def apply_dashboard_feature(feature):
+    if feature == "rules":
+        data = _read_config(RULES_FILE, {"menu": {}, "sections": {}})
+        menu = data.setdefault("menu", {})
+        if not data.get("sections"):
+            raise RuntimeError("Add at least one rules section first.")
+        channel = _find_text_channel(menu.get("channel_id"))
+        if not channel:
+            raise RuntimeError("Choose a valid rules channel.")
+        embed = discord.Embed(
+            title=menu.get("title", "🏴‍☠️ Pirates Server Rules"),
+            description=menu.get("description", "Choose a rules section below."),
+            colour=parse_colour(menu.get("color", "991111"))
+        )
+        if menu.get("thumbnail_url"): embed.set_thumbnail(url=menu["thumbnail_url"])
+        if menu.get("image_url"): embed.set_image(url=menu["image_url"])
+        if menu.get("footer"): embed.set_footer(text=menu["footer"])
+        await _send_or_edit(channel, menu, "message_id", embed=embed, view=RulesMenuView())
+        _write_config(RULES_FILE, data)
+        return {"message": f"Rules menu updated in #{channel.name}"}
+
+    if feature == "embeds":
+        data = _read_config(EMBED_FILE, {})
+        channel = _find_text_channel(data.get("channel_id"))
+        if not channel: raise RuntimeError("Choose a valid embed channel.")
+        embed = discord.Embed(
+            title=data.get("title") or None,
+            description=data.get("description") or None,
+            colour=parse_colour(data.get("color", "ff0000"))
+        )
+        if data.get("thumbnail"): embed.set_thumbnail(url=data["thumbnail"])
+        if data.get("image"): embed.set_image(url=data["image"])
+        if data.get("footer"): embed.set_footer(text=data["footer"])
+        await _send_or_edit(channel, data, "message_id", embed=embed)
+        _write_config(EMBED_FILE, data)
+        return {"message": f"Embed updated in #{channel.name}"}
+
+    if feature == "tickets":
+        data = load_ticket_settings()
+
+        if not data.get("enabled", True):
+            raise RuntimeError(
+                "The ticket system is currently disabled."
+            )
+
+        channel = _find_text_channel(
+            data.get("ticket_channel")
+        )
+
+        if not channel:
+            raise RuntimeError(
+                "Choose a valid ticket panel channel."
+            )
+
+        enabled_options = active_ticket_options()
+
+        if not enabled_options:
+            raise RuntimeError(
+                "Create at least one enabled ticket option."
+            )
+
+        if len(enabled_options) > 25:
+            raise RuntimeError(
+                "Discord allows a maximum of 25 ticket options."
+            )
+
+        panel = data.get("panel", {})
+
+        embed = discord.Embed(
+            title=panel.get(
+                "title",
+                "🎟 Open a Ticket"
+            ),
+            description=panel.get(
+                "description",
+                "Select the type of ticket you want to open."
+            ),
+            colour=parse_colour(
+                panel.get("color", "991111")
+            )
+        )
+
+        footer = str(
+            panel.get("footer", "")
+        ).strip()
+
+        image_url = str(
+            panel.get("image_url", "")
+        ).strip()
+
+        thumbnail_url = str(
+            panel.get("thumbnail_url", "")
+        ).strip()
+
+        if footer:
+            embed.set_footer(text=footer)
+
+        if image_url:
+            embed.set_image(url=image_url)
+
+        if thumbnail_url:
+            embed.set_thumbnail(url=thumbnail_url)
+
+        selection_type = str(
+            data.get("selection_type", "buttons")
+        ).lower()
+
+        if selection_type == "dropdown":
+            ticket_view = TicketDropdownView()
+        else:
+            ticket_view = TicketButtonsView()
+
+        await _send_or_edit(
+            channel,
+            data,
+            "panel_message_id",
+            embed=embed,
+            view=ticket_view
+        )
+
+        data["guild_id"] = str(channel.guild.id)
+        data["option_count"] = len(
+            data.get("options", [])
+        )
+
+        save_ticket_settings(data)
+
+        return {
+            "message": (
+                f"Ticket panel updated in "
+                f"#{channel.name}"
+            )
+        }
+
+    if feature == "reaction_roles":
+        data = _read_config(REACTION_ROLE_FILE, {"roles": []})
+        channel = _find_text_channel(data.get("channel_id"))
+        if not channel: raise RuntimeError("Choose a valid reaction-role channel.")
+        lines = ["React below to receive a role:"]
+        for item in data.get("roles", []):
+            role = channel.guild.get_role(int(item.get("role_id"))) if str(item.get("role_id", "")).isdigit() else None
+            lines.append(f"{item.get('emoji', '🎭')} — {role.mention if role else 'Configured role'}")
+        message = await _send_or_edit(channel, data, "message_id", content="\n".join(lines))
+        for item in data.get("roles", []):
+            if item.get("emoji"):
+                try: await message.add_reaction(item["emoji"])
+                except discord.HTTPException: pass
+        data["guild_id"] = str(channel.guild.id)
+        _write_config(REACTION_ROLE_FILE, data)
+        return {"message": f"Reaction roles updated in #{channel.name}"}
+
+    if feature == "welcome":
+        data = _read_config(WELCOME_FILE, {})
+        channel = _find_text_channel(data.get("channel") or data.get("channel_id"))
+        if not channel: raise RuntimeError("Choose a valid welcome channel.")
+        data["guild_id"] = str(channel.guild.id)
+        preview = str(data.get("message", "Welcome {user} to {server}!"))
+        preview = preview.replace("{user}", bot.user.mention).replace("{server}", channel.guild.name)
+        embed = discord.Embed(title="👋 Welcome preview", description=preview, colour=discord.Color.red())
+        image = data.get("banner_url") or data.get("image_url")
+        if image: embed.set_image(url=image)
+        await _send_or_edit(channel, data, "preview_message_id", embed=embed)
+        _write_config(WELCOME_FILE, data)
+        return {"message": f"Welcome settings applied in #{channel.name}"}
+
+    if feature == "moderation":
+        data = _read_config(MODERATION_FILE, {})
+        channel = _find_text_channel(data.get("log_channel"))
+        if not channel: raise RuntimeError("Choose a valid moderation log channel.")
+        automod = data.get("automod", {})
+        description = (
+            f"**Enabled:** {data.get('enabled', False)}\n"
+            f"**Anti-spam:** {automod.get('anti_spam', False)}\n"
+            f"**Anti-links:** {automod.get('anti_links', False)}\n"
+            f"**Word filter:** {automod.get('word_filter', False)}"
+        )
+        embed = discord.Embed(title="🛡 Moderation settings updated", description=description, colour=discord.Color.red())
+        await _send_or_edit(channel, data, "status_message_id", embed=embed)
+        data["guild_id"] = str(channel.guild.id)
+        _write_config(MODERATION_FILE, data)
+        return {"message": f"Moderation settings applied for {channel.guild.name}"}
+
+    if feature == "polls":
+        data = _read_config(POLL_FILE, {})
+        channel = _find_text_channel(data.get("channel_id"))
+        if not channel:
+            raise RuntimeError("Choose a valid poll channel.")
+
+        question = str(data.get("question", "")).strip()
+        if not question:
+            raise RuntimeError("Enter a poll question.")
+
+        colour = parse_colour(data.get("color", "5865F2"), 0x5865F2)
+        embed = discord.Embed(
+            title=data.get("title") or "📊 Poll",
+            description=f"**{question}**",
+            colour=colour
+        )
+        embed.add_field(name="✅ Yes", value="0", inline=True)
+        embed.add_field(name="❌ No", value="0", inline=True)
+        if data.get("footer"):
+            embed.set_footer(text=str(data["footer"]))
+
+        # A new poll is intentionally posted each time so old votes are not erased.
+        message = await channel.send(embed=embed, view=PollView(question))
+        data["message_id"] = str(message.id)
+        data["guild_id"] = str(channel.guild.id)
+        _write_config(POLL_FILE, data)
+        return {"message": f"Poll published in #{channel.name}", "message_id": str(message.id)}
+
+    if feature == "giveaways":
+        data = _read_config(GIVEAWAY_FILE, {})
+        channel = _find_text_channel(data.get("channel_id"))
+        if not channel:
+            raise RuntimeError("Choose a valid giveaway channel.")
+
+        prize = str(data.get("prize", "")).strip()
+        if not prize:
+            raise RuntimeError("Enter a giveaway prize.")
+
+        try:
+            duration = max(10, int(data.get("duration_seconds", 3600)))
+        except (TypeError, ValueError):
+            duration = 3600
+
+        colour = parse_colour(data.get("color", "F1C40F"), 0xF1C40F)
+        embed = discord.Embed(
+            title=data.get("title") or "🎉 Giveaway",
+            description=(
+                f"**Prize:** {prize}\n"
+                f"**Winners:** {max(1, int(data.get('winner_count', 1)))}\n"
+                f"**Ends in:** {duration} seconds\n\n"
+                "Press the button below to enter!"
+            ),
+            colour=colour
+        )
+        if data.get("image_url"):
+            embed.set_image(url=str(data["image_url"]))
+        if data.get("footer"):
+            embed.set_footer(text=str(data["footer"]))
+
+        view = GiveawayView(
+            duration,
+            prize,
+            winner_count=max(1, int(data.get("winner_count", 1)))
+        )
+        message = await channel.send(embed=embed, view=view)
+        view.message = message
+        data["message_id"] = str(message.id)
+        data["guild_id"] = str(channel.guild.id)
+        _write_config(GIVEAWAY_FILE, data)
+        return {"message": f"Giveaway started in #{channel.name}", "message_id": str(message.id)}
+
+    if feature == "settings":
+        data = _read_config(DASHBOARD_FILE, {})
+        status_text = str(data.get("status", "Pirates Bot"))
+        await bot.change_presence(activity=discord.Game(name=status_text))
+        return {"message": "Bot presence updated"}
+
+    if feature == "economy":
+        return {"message": "Economy settings saved and will be used by configured commands"}
+
+    return {"message": "Settings applied"}
+
+
     # ------------------- READY -------------------
 @bot.event
 async def on_ready():
+    if not getattr(
+        bot,
+        "_persistent_views_registered",
+        False
+    ):
+        bot.add_view(RulesMenuView())
+        bot.add_view(CloseTicketView())
+
+        ticket_data = load_ticket_settings()
+
+        selection_type = str(
+            ticket_data.get(
+                "selection_type",
+                "buttons"
+            )
+        ).lower()
+
+        enabled_options = active_ticket_options()
+
+        if enabled_options:
+            if selection_type == "dropdown":
+                bot.add_view(TicketDropdownView())
+            else:
+                bot.add_view(TicketButtonsView())
+
+        bot._persistent_views_registered = True
+
     await tree.sync()
+
+    if not auto_announcement_loop.is_running():
+        auto_announcement_loop.start()
+        
+    if not reminder_loop.is_running():
+        reminder_loop.start()
+
     print(f"✅ Logged in as {bot.user}")
+    print(
+        f"✅ Connected to "
+        f"{len(bot.guilds)} servers"
+    )
 
-import os
+TOKEN = os.getenv("DISCORD_TOKEN")
 
-bot.run(os.getenv("DISCORD_TOKEN"))
+if not TOKEN:
+    raise RuntimeError(
+        "DISCORD_TOKEN is missing from your .env file."
+    )
+
+print("STARTING DISCORD BOT...")
+
+bot.run(TOKEN)

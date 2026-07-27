@@ -1,0 +1,1091 @@
+{% extends "base.html" %}
+
+{% block title %}Tickets | Pirates Bot{% endblock %}
+
+{% block content %}
+<div class="ticket-page">
+
+    <section class="ticket-hero">
+        <div>
+            <span class="ticket-badge">🎟 CUSTOM TICKET BUILDER</span>
+            <h1>Ticket System</h1>
+            <p>
+                Build your own ticket categories, choose buttons or a dropdown,
+                assign different staff roles and publish everything directly to Discord.
+            </p>
+        </div>
+
+        <div class="ticket-status">
+            <span class="status-dot {% if ticket.enabled %}online{% endif %}"></span>
+            {% if ticket.enabled %}
+                Ticket system enabled
+            {% else %}
+                Ticket system disabled
+            {% endif %}
+        </div>
+    </section>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="flash-area">
+                {% for category, message in messages %}
+                    <div class="flash-message {{ category }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <form method="POST" id="ticket-builder-form">
+
+        <section class="ticket-card">
+            <div class="card-heading">
+                <div>
+                    <h2>⚙️ General Settings</h2>
+                    <p>Choose where the ticket panel will be published.</p>
+                </div>
+
+                <label class="switch-row">
+                    <input
+                        type="checkbox"
+                        name="enabled"
+                        {% if ticket.enabled %}checked{% endif %}
+                    >
+                    <span class="switch-slider"></span>
+                    <span>Enabled</span>
+                </label>
+            </div>
+
+            <div class="ticket-grid two-column">
+                <div class="form-group">
+                    <label for="ticket_channel">Ticket panel channel</label>
+
+                    <select
+                        id="ticket_channel"
+                        name="ticket_channel"
+                        data-discord-select="channel"
+                        data-selected="{{ ticket.ticket_channel }}"
+                        required
+                    >
+                        <option value="">Select a Discord channel</option>
+
+                        {% if ticket.ticket_channel %}
+                            <option
+                                value="{{ ticket.ticket_channel }}"
+                                selected
+                            >
+                                Current channel
+                            </option>
+                        {% endif %}
+                    </select>
+
+                    <small>
+                        The bot will publish or update the ticket panel in this channel.
+                    </small>
+                </div>
+
+                <div class="form-group">
+                    <label for="selection_type">Ticket selection style</label>
+
+                    <select id="selection_type" name="selection_type">
+                        <option
+                            value="buttons"
+                            {% if ticket.selection_type == "buttons" %}selected{% endif %}
+                        >
+                            Buttons
+                        </option>
+
+                        <option
+                            value="dropdown"
+                            {% if ticket.selection_type == "dropdown" %}selected{% endif %}
+                        >
+                            Dropdown menu
+                        </option>
+                    </select>
+
+                    <small>
+                        Discord allows up to 25 ticket options.
+                    </small>
+                </div>
+            </div>
+        </section>
+
+        <section class="ticket-card">
+            <div class="card-heading">
+                <div>
+                    <h2>🏴‍☠️ Ticket Panel</h2>
+                    <p>Customise the message members see in Discord.</p>
+                </div>
+            </div>
+
+            <div class="ticket-grid two-column">
+                <div class="form-group">
+                    <label for="panel_title">Panel title</label>
+
+                    <input
+                        id="panel_title"
+                        type="text"
+                        name="panel_title"
+                        maxlength="256"
+                        value="{{ ticket.panel.title }}"
+                        placeholder="🎟 Open a Ticket"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="panel_color">Panel colour</label>
+
+                    <div class="color-field">
+                        <input
+                            id="panel_color_picker"
+                            type="color"
+                            value="#{{ ticket.panel.color|replace('#', '') }}"
+                        >
+
+                        <input
+                            id="panel_color"
+                            type="text"
+                            name="panel_color"
+                            value="{{ ticket.panel.color }}"
+                            placeholder="991111"
+                            maxlength="7"
+                        >
+                    </div>
+                </div>
+
+                <div class="form-group full-width">
+                    <label for="panel_description">Panel description</label>
+
+                    <textarea
+                        id="panel_description"
+                        name="panel_description"
+                        rows="4"
+                        maxlength="4000"
+                        placeholder="Select the type of ticket you want to open."
+                    >{{ ticket.panel.description }}</textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="panel_placeholder">Dropdown placeholder</label>
+
+                    <input
+                        id="panel_placeholder"
+                        type="text"
+                        name="panel_placeholder"
+                        maxlength="150"
+                        value="{{ ticket.panel.placeholder }}"
+                        placeholder="Choose a ticket type..."
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="panel_footer">Footer</label>
+
+                    <input
+                        id="panel_footer"
+                        type="text"
+                        name="panel_footer"
+                        maxlength="2048"
+                        value="{{ ticket.panel.footer }}"
+                        placeholder="Pirates Bot Support"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="panel_thumbnail_url">Thumbnail URL</label>
+
+                    <input
+                        id="panel_thumbnail_url"
+                        type="url"
+                        name="panel_thumbnail_url"
+                        value="{{ ticket.panel.thumbnail_url }}"
+                        placeholder="https://example.com/image.png"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="panel_image_url">Banner image URL</label>
+
+                    <input
+                        id="panel_image_url"
+                        type="url"
+                        name="panel_image_url"
+                        value="{{ ticket.panel.image_url }}"
+                        placeholder="https://example.com/banner.png"
+                    >
+                </div>
+            </div>
+        </section>
+
+        <section class="ticket-card">
+            <div class="card-heading ticket-options-heading">
+                <div>
+                    <h2>🧰 Custom Ticket Types</h2>
+                    <p>
+                        Server admins choose exactly how many options they need
+                        and customise every option themselves.
+                    </p>
+                </div>
+
+                <button
+                    type="button"
+                    class="secondary-button"
+                    id="add-ticket-option"
+                >
+                    ＋ Add Ticket Type
+                </button>
+            </div>
+
+            <input
+                type="hidden"
+                id="option_count"
+                name="option_count"
+                value="{{ ticket.options|length }}"
+            >
+
+            <div id="ticket-options-container"></div>
+
+            <div id="no-ticket-options" class="empty-options">
+                <div class="empty-icon">🏝️</div>
+                <h3>No ticket types yet</h3>
+                <p>
+                    Click <strong>Add Ticket Type</strong> to create the first option.
+                </p>
+            </div>
+        </section>
+
+        <section class="ticket-card">
+            <div class="card-heading">
+                <div>
+                    <h2>🔒 Closing Settings</h2>
+                    <p>Choose what happens when staff close a ticket.</p>
+                </div>
+            </div>
+
+            <div class="ticket-grid two-column">
+                <div class="form-group full-width">
+                    <label for="close_message">Close message</label>
+
+                    <textarea
+                        id="close_message"
+                        name="close_message"
+                        rows="3"
+                        maxlength="2000"
+                        placeholder="🔒 This ticket is now being closed."
+                    >{{ ticket.settings.close_message }}</textarea>
+                </div>
+
+                <label class="check-card">
+                    <input
+                        type="checkbox"
+                        name="delete_after_close"
+                        {% if ticket.settings.delete_after_close %}checked{% endif %}
+                    >
+
+                    <div>
+                        <strong>Delete ticket after closing</strong>
+                        <span>
+                            The channel will be deleted three seconds after the close button is used.
+                        </span>
+                    </div>
+                </label>
+            </div>
+        </section>
+
+        <div class="save-bar">
+            <div>
+                <strong>Ready to publish?</strong>
+                <span>
+                    Saving will update the ticket panel in Discord immediately.
+                </span>
+            </div>
+
+            <button type="submit" class="primary-button">
+                💾 Save & Publish
+            </button>
+        </div>
+    </form>
+</div>
+
+<script id="existing-ticket-options" type="application/json">
+{{ ticket.options|tojson }}
+</script>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const container = document.getElementById("ticket-options-container");
+    const emptyState = document.getElementById("no-ticket-options");
+    const addButton = document.getElementById("add-ticket-option");
+    const optionCountInput = document.getElementById("option_count");
+
+    let existingOptions = [];
+
+    try {
+        existingOptions = JSON.parse(
+            document.getElementById("existing-ticket-options").textContent
+        );
+    } catch (error) {
+        existingOptions = [];
+    }
+
+    let optionCards = [];
+
+    function escapeHtml(value) {
+        return String(value ?? "")
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#039;");
+    }
+
+    function normaliseColour(value, fallback) {
+        const cleaned = String(value || fallback)
+            .replace("#", "")
+            .trim();
+
+        return /^[0-9a-fA-F]{6}$/.test(cleaned)
+            ? cleaned
+            : fallback;
+    }
+
+    function createOptionCard(option = {}) {
+        if (optionCards.length >= 25) {
+            alert("Discord allows a maximum of 25 ticket options.");
+            return;
+        }
+
+        const uniqueId = Date.now() + Math.random();
+        const card = document.createElement("div");
+
+        card.className = "ticket-option-card";
+        card.dataset.uniqueId = uniqueId;
+
+        const enabled = option.enabled !== false;
+        const buttonColour = option.button_color || "grey";
+        const embedColour = normaliseColour(
+            option.embed_color,
+            "991111"
+        );
+
+        card.innerHTML = `
+            <div class="option-card-heading">
+                <div>
+                    <span class="option-number">Ticket Type</span>
+                    <h3 class="option-live-title">
+                        ${escapeHtml(option.emoji || "🎟")}
+                        ${escapeHtml(option.name || "New Ticket Type")}
+                    </h3>
+                </div>
+
+                <div class="option-actions">
+                    <label class="mini-switch">
+                        <input
+                            type="checkbox"
+                            data-field="enabled"
+                            ${enabled ? "checked" : ""}
+                        >
+                        <span>Enabled</span>
+                    </label>
+
+                    <button
+                        type="button"
+                        class="remove-option-button"
+                        title="Delete this ticket type"
+                    >
+                        🗑 Delete
+                    </button>
+                </div>
+            </div>
+
+            <div class="ticket-grid three-column">
+                <div class="form-group">
+                    <label>Ticket name</label>
+                    <input
+                        type="text"
+                        data-field="name"
+                        value="${escapeHtml(option.name || "")}"
+                        maxlength="80"
+                        placeholder="Support"
+                        required
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label>Emoji</label>
+                    <input
+                        type="text"
+                        data-field="emoji"
+                        value="${escapeHtml(option.emoji || "🎟")}"
+                        maxlength="32"
+                        placeholder="🎟"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label>Button colour</label>
+                    <select data-field="button_color">
+                        <option value="blue" ${buttonColour === "blue" ? "selected" : ""}>
+                            Blue
+                        </option>
+                        <option value="green" ${buttonColour === "green" ? "selected" : ""}>
+                            Green
+                        </option>
+                        <option value="red" ${buttonColour === "red" ? "selected" : ""}>
+                            Red
+                        </option>
+                        <option value="grey" ${["grey", "gray"].includes(buttonColour) ? "selected" : ""}>
+                            Grey
+                        </option>
+                    </select>
+                </div>
+
+                <div class="form-group full-width">
+                    <label>Short description</label>
+                    <input
+                        type="text"
+                        data-field="description"
+                        value="${escapeHtml(option.description || "")}"
+                        maxlength="100"
+                        placeholder="General questions and support"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label>Discord category</label>
+                    <select
+                        data-field="category_id"
+                        data-discord-select="category"
+                        data-selected="${escapeHtml(option.category_id || "")}"
+                    >
+                        <option value="">Create or use category name</option>
+                        ${
+                            option.category_id
+                                ? `<option value="${escapeHtml(option.category_id)}" selected>Current category</option>`
+                                : ""
+                        }
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Fallback category name</label>
+                    <input
+                        type="text"
+                        data-field="category_name"
+                        value="${escapeHtml(option.category_name || "Tickets")}"
+                        maxlength="100"
+                        placeholder="Tickets"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label>Staff role</label>
+                    <select
+                        data-field="staff_role_id"
+                        data-discord-select="role"
+                        data-selected="${escapeHtml(option.staff_role_id || "")}"
+                    >
+                        <option value="">No staff role selected</option>
+                        ${
+                            option.staff_role_id
+                                ? `<option value="${escapeHtml(option.staff_role_id)}" selected>Current role</option>`
+                                : ""
+                        }
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Channel prefix</label>
+                    <input
+                        type="text"
+                        data-field="channel_prefix"
+                        value="${escapeHtml(option.channel_prefix || "ticket")}"
+                        maxlength="50"
+                        placeholder="support"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label>Ticket embed colour</label>
+
+                    <div class="color-field">
+                        <input
+                            type="color"
+                            data-colour-picker
+                            value="#${embedColour}"
+                        >
+
+                        <input
+                            type="text"
+                            data-field="embed_color"
+                            value="${embedColour}"
+                            maxlength="7"
+                            placeholder="991111"
+                        >
+                    </div>
+                </div>
+
+                <div class="form-group full-width">
+                    <label>Opening message</label>
+
+                    <textarea
+                        data-field="opening_message"
+                        rows="4"
+                        maxlength="2000"
+                        placeholder="Welcome {user}. Please explain how we can help with your {type} ticket."
+                    >${escapeHtml(
+                        option.opening_message ||
+                        "Welcome {user}. Please explain how we can help with your {type} ticket."
+                    )}</textarea>
+
+                    <small>
+                        Available placeholders:
+                        <strong>{user}</strong> and <strong>{type}</strong>
+                    </small>
+                </div>
+            </div>
+        `;
+
+        card.querySelector(".remove-option-button").addEventListener(
+            "click",
+            function () {
+                card.remove();
+                optionCards = optionCards.filter(
+                    currentCard => currentCard !== card
+                );
+                rebuildFieldNames();
+            }
+        );
+
+        const nameInput = card.querySelector('[data-field="name"]');
+        const emojiInput = card.querySelector('[data-field="emoji"]');
+        const liveTitle = card.querySelector(".option-live-title");
+
+        function updateLiveTitle() {
+            liveTitle.textContent =
+                `${emojiInput.value || "🎟"} ${nameInput.value || "New Ticket Type"}`;
+        }
+
+        nameInput.addEventListener("input", updateLiveTitle);
+        emojiInput.addEventListener("input", updateLiveTitle);
+
+        const colourPicker = card.querySelector("[data-colour-picker]");
+        const colourText = card.querySelector('[data-field="embed_color"]');
+
+        colourPicker.addEventListener("input", function () {
+            colourText.value = colourPicker.value.replace("#", "");
+        });
+
+        colourText.addEventListener("input", function () {
+            const colour = normaliseColour(
+                colourText.value,
+                embedColour
+            );
+
+            if (/^[0-9a-fA-F]{6}$/.test(colour)) {
+                colourPicker.value = `#${colour}`;
+            }
+        });
+
+        container.appendChild(card);
+        optionCards.push(card);
+
+        rebuildFieldNames();
+        refreshTicketDiscordSelectors();
+    }
+
+    function rebuildFieldNames() {
+        optionCards.forEach(function (card, index) {
+            card.querySelector(".option-number").textContent =
+                `Ticket Type ${index + 1}`;
+
+            card.querySelectorAll("[data-field]").forEach(function (field) {
+                const fieldName = field.dataset.field;
+                field.name = `option_${fieldName}_${index}`;
+            });
+        });
+
+        optionCountInput.value = optionCards.length;
+
+        emptyState.style.display =
+            optionCards.length === 0 ? "block" : "none";
+    }
+let discordGuildData = {
+    channels: [],
+    roles: [],
+    categories: []
+};
+
+function fillDiscordSelect(select, items, placeholder, prefix = "") {
+    const selectedValue =
+        select.dataset.selected || select.value || "";
+
+    select.innerHTML = "";
+
+    const emptyOption = document.createElement("option");
+    emptyOption.value = "";
+    emptyOption.textContent = placeholder;
+    select.appendChild(emptyOption);
+
+    items.forEach(function (item) {
+        const option = document.createElement("option");
+
+        option.value = String(item.id);
+        option.textContent = `${prefix}${item.name}`;
+
+        if (String(item.id) === String(selectedValue)) {
+            option.selected = true;
+        }
+
+        select.appendChild(option);
+    });
+}
+
+function refreshTicketDiscordSelectors() {
+    document
+        .querySelectorAll('[data-discord-select="role"]')
+        .forEach(function (select) {
+            fillDiscordSelect(
+                select,
+                discordGuildData.roles || [],
+                "Select a staff role",
+                "@"
+            );
+        });
+
+    document
+        .querySelectorAll('[data-discord-select="category"]')
+        .forEach(function (select) {
+            fillDiscordSelect(
+                select,
+                discordGuildData.categories || [],
+                "Create or use category name"
+            );
+        });
+}
+
+async function loadTicketDiscordData() {
+    try {
+        const response = await fetch(
+            "/api/guild/{{ selected_guild_id }}/all"
+        );
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        discordGuildData = await response.json();
+        refreshTicketDiscordSelectors();
+    } catch (error) {
+        console.error(
+            "Could not load Discord roles and categories:",
+            error
+        );
+    }
+}
+    addButton.addEventListener("click", function () {
+        createOptionCard({
+            enabled: true,
+            emoji: "🎟",
+            button_color: "grey",
+            embed_color: "991111",
+            category_name: "Tickets",
+            channel_prefix: "ticket",
+            opening_message:
+                "Welcome {user}. Please explain how we can help with your {type} ticket."
+        });
+    });
+
+   existingOptions.forEach(function (option) {
+    createOptionCard(option);
+});
+
+rebuildFieldNames();
+loadTicketDiscordData();
+
+    const panelPicker = document.getElementById("panel_color_picker");
+    const panelText = document.getElementById("panel_color");
+
+    panelPicker.addEventListener("input", function () {
+        panelText.value = panelPicker.value.replace("#", "");
+    });
+
+    panelText.addEventListener("input", function () {
+        const cleaned = panelText.value
+            .replace("#", "")
+            .trim();
+
+        if (/^[0-9a-fA-F]{6}$/.test(cleaned)) {
+            panelPicker.value = `#${cleaned}`;
+        }
+    });
+});
+</script>
+
+<style>
+.ticket-page {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 10px 0 80px;
+}
+
+.ticket-hero {
+    display: flex;
+    justify-content: space-between;
+    gap: 30px;
+    align-items: center;
+    padding: 34px;
+    margin-bottom: 24px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 22px;
+    background:
+        linear-gradient(
+            135deg,
+            rgba(114, 20, 20, 0.94),
+            rgba(25, 17, 24, 0.96)
+        );
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
+}
+
+.ticket-hero h1 {
+    margin: 8px 0;
+    font-size: clamp(32px, 5vw, 54px);
+}
+
+.ticket-hero p {
+    max-width: 760px;
+    margin: 0;
+    opacity: 0.78;
+    line-height: 1.7;
+}
+
+.ticket-badge {
+    display: inline-block;
+    padding: 7px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.09);
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 1.4px;
+}
+
+.ticket-status {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    white-space: nowrap;
+    padding: 11px 15px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.24);
+}
+
+.status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #747474;
+}
+
+.status-dot.online {
+    background: #37d67a;
+    box-shadow: 0 0 15px rgba(55, 214, 122, 0.8);
+}
+
+.ticket-card {
+    margin-bottom: 22px;
+    padding: 26px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 20px;
+    background: rgba(18, 18, 24, 0.92);
+    box-shadow: 0 18px 45px rgba(0, 0, 0, 0.22);
+}
+
+.card-heading,
+.option-card-heading,
+.ticket-options-heading {
+    display: flex;
+    justify-content: space-between;
+    gap: 20px;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.card-heading h2,
+.option-card-heading h3 {
+    margin: 0 0 5px;
+}
+
+.card-heading p {
+    margin: 0;
+    opacity: 0.65;
+}
+
+.ticket-grid {
+    display: grid;
+    gap: 18px;
+}
+
+.ticket-grid.two-column {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ticket-grid.three-column {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.full-width {
+    grid-column: 1 / -1;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.form-group label {
+    font-weight: 700;
+}
+
+.form-group small {
+    opacity: 0.58;
+    line-height: 1.5;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 13px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.055);
+    color: inherit;
+    outline: none;
+}
+
+.form-group textarea {
+    resize: vertical;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+    border-color: rgba(220, 70, 70, 0.9);
+    box-shadow: 0 0 0 3px rgba(220, 70, 70, 0.13);
+}
+
+.color-field {
+    display: grid;
+    grid-template-columns: 54px 1fr;
+    gap: 10px;
+}
+
+.color-field input[type="color"] {
+    min-height: 47px;
+    padding: 4px;
+}
+
+.switch-row,
+.mini-switch,
+.check-card {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    cursor: pointer;
+}
+
+.switch-row input,
+.mini-switch input {
+    width: 18px;
+    height: 18px;
+}
+
+.check-card {
+    align-items: flex-start;
+    padding: 17px;
+    border-radius: 13px;
+    background: rgba(255, 255, 255, 0.045);
+}
+
+.check-card input {
+    width: 19px;
+    height: 19px;
+}
+
+.check-card div {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.check-card span {
+    opacity: 0.62;
+    line-height: 1.5;
+}
+
+.ticket-option-card {
+    margin-bottom: 18px;
+    padding: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-left: 4px solid #a92d2d;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.035);
+}
+
+.option-number {
+    display: block;
+    margin-bottom: 4px;
+    color: #df7777;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+
+.option-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.primary-button,
+.secondary-button,
+.remove-option-button {
+    border: 0;
+    border-radius: 11px;
+    padding: 12px 17px;
+    color: white;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.primary-button {
+    background: linear-gradient(135deg, #b52f2f, #7c1616);
+    box-shadow: 0 10px 25px rgba(138, 28, 28, 0.35);
+}
+
+.secondary-button {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.remove-option-button {
+    padding: 9px 12px;
+    background: rgba(197, 50, 50, 0.17);
+    color: #ff8e8e;
+}
+
+.empty-options {
+    padding: 42px 20px;
+    border: 1px dashed rgba(255, 255, 255, 0.14);
+    border-radius: 16px;
+    text-align: center;
+    opacity: 0.74;
+}
+
+.empty-icon {
+    font-size: 42px;
+}
+
+.empty-options h3 {
+    margin-bottom: 5px;
+}
+
+.save-bar {
+    position: sticky;
+    bottom: 16px;
+    z-index: 20;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 22px;
+    padding: 18px 21px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 16px;
+    background: rgba(19, 15, 19, 0.96);
+    box-shadow: 0 20px 55px rgba(0, 0, 0, 0.48);
+    backdrop-filter: blur(14px);
+}
+
+.save-bar div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.save-bar span {
+    opacity: 0.62;
+}
+
+.flash-message {
+    margin-bottom: 16px;
+    padding: 14px 17px;
+    border-radius: 12px;
+}
+
+.flash-message.success {
+    background: rgba(46, 190, 105, 0.16);
+    border: 1px solid rgba(46, 190, 105, 0.4);
+}
+
+.flash-message.warning {
+    background: rgba(235, 165, 52, 0.15);
+    border: 1px solid rgba(235, 165, 52, 0.4);
+}
+
+@media (max-width: 900px) {
+    .ticket-hero,
+    .card-heading,
+    .option-card-heading,
+    .save-bar {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .ticket-grid.two-column,
+    .ticket-grid.three-column {
+        grid-template-columns: 1fr;
+    }
+
+    .full-width {
+        grid-column: auto;
+    }
+
+    .option-actions {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .primary-button {
+        width: 100%;
+    }
+}
+.form-group select,
+.form-group select option,
+.discord-select,
+.discord-select option {
+    background: #1b1118;
+    color: #ffffff;
+}
+
+.form-group select:focus,
+.discord-select:focus {
+    background: #24151f;
+    color: #ffffff;
+}
+
+.form-group select option:checked,
+.discord-select option:checked {
+    background: #8f2424;
+    color: #ffffff;
+}
+
+.form-group select option:hover,
+.discord-select option:hover {
+    background: #5f1b1b;
+    color: #ffffff;
+}
+</style>
+{% endblock %}

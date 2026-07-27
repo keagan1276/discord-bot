@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Settings | Pirates Bot{% endblock %}
+{% block page_name %}Settings{% endblock %}
+{% block eyebrow %}CAPTAIN'S QUARTERS{% endblock %}
+{% block heading %}Global Dashboard Settings{% endblock %}
+{% block description %}Owner-only branding and global bot presentation settings.{% endblock %}
+{% block content %}
+<div class="owner-warning">👑 Only the bot owner should be able to access and save this page.</div>
+<form method="POST" class="settings-form">
+<div class="content-grid two">
+    <section class="panel">
+        <div class="panel-heading"><div><span class="panel-icon">☠️</span><h2>Branding</h2></div></div>
+        <div class="form-group"><label>Bot name</label><input name="bot_name" value="{{ dashboard.bot_name }}"></div>
+        <div class="form-group"><label>Logo URL</label><input type="url" name="logo" value="{{ dashboard.logo }}"></div>
+        <div class="form-group"><label>Dashboard title</label><input name="title" value="{{ dashboard.title }}"></div>
+        <div class="form-group"><label>Subtitle</label><input name="subtitle" value="{{ dashboard.subtitle }}"></div>
+    </section>
+
+    <section class="panel">
+        <div class="panel-heading"><div><span class="panel-icon">📡</span><h2>Presence</h2></div></div>
+        <div class="form-group"><label>Bot status text</label><input name="status" value="{{ dashboard.status }}"></div>
+        <div class="form-group"><label>Server display value</label><input name="servers" value="{{ dashboard.servers }}"></div>
+        <div class="form-group"><label>Command display value</label><input name="commands" value="{{ dashboard.commands }}"></div>
+        <div class="form-group"><label>Owner name</label><input name="owner" value="{{ dashboard.owner }}"></div>
+    </section>
+</div>
+<div class="save-bar"><span>These changes affect the global Pirates Bot dashboard.</span><button class="primary-button" type="submit">Save Global Settings</button></div>
+</form>
+{% endblock %}

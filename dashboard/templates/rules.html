@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Rules | Pirates Bot{% endblock %}
+{% block page_name %}Rules{% endblock %}
+{% block eyebrow %}SERVER CODE{% endblock %}
+{% block heading %}Interactive Rules Menu{% endblock %}
+{% block description %}Create a polished rules message with multiple clickable sections, images, and custom buttons.{% endblock %}
+{% block content %}
+<form method="POST" class="settings-form">
+<input type="hidden" name="section_key" id="section_key" value="">
+<div class="editor-grid">
+<div class="stack">
+<section class="panel">
+    <div class="panel-heading"><div><span class="panel-icon">🏴‍☠️</span><h2>Main Rules Menu</h2></div><span class="pill">Published</span></div>
+    <div class="form-group"><label>Rules channel</label><input name="menu_channel_id" value="{{ rules.menu.get('channel_id','') }}" placeholder="Choose a channel"></div>
+    <div class="form-group"><label>Main title</label><input name="menu_title" value="{{ rules.menu.get('title','') }}" data-preview-source="rules_title"></div>
+    <div class="form-group"><label>Description</label><textarea name="menu_description" data-preview-source="rules_description">{{ rules.menu.get('description','') }}</textarea></div>
+    <div class="form-row">
+        <div class="form-group"><label>Colour</label><input type="color" name="menu_color" value="#{{ rules.menu.get('color','991111') }}"></div>
+        <div class="form-group"><label>Footer</label><input name="menu_footer" value="{{ rules.menu.get('footer','') }}"></div>
+    </div>
+    <div class="form-group"><label>Main image URL</label><input type="url" name="menu_image_url" value="{{ rules.menu.get('image_url','') }}"></div>
+    <div class="form-group"><label>Thumbnail URL</label><input type="url" name="menu_thumbnail_url" value="{{ rules.menu.get('thumbnail_url','') }}"></div>
+</section>
+
+<section class="panel">
+    <div class="panel-heading"><div><span class="panel-icon">➕</span><h2>Add Rules Section</h2></div></div>
+    <div class="inline-action">
+        <input name="new_section_key" placeholder="Example: voice_rules">
+        <button class="secondary-button" type="submit" name="action" value="add_section">Add Section</button>
+    </div>
+</section>
+
+{% for section_key, section in rules.sections.items() %}
+<section class="panel rule-section">
+    <div class="panel-heading">
+        <div><span class="panel-icon">{{ section.get('button_emoji','📜') }}</span><h2>{{ section.get('button_label', section_key|replace('_',' ')|title) }}</h2></div>
+        <span class="pill">{{ section_key }}</span>
+    </div>
+    <div class="form-row">
+        <div class="form-group"><label>Button text</label><input name="{{ section_key }}_button_label" value="{{ section.get('button_label','') }}"></div>
+        <div class="form-group"><label>Button emoji</label><input name="{{ section_key }}_button_emoji" value="{{ section.get('button_emoji','') }}"></div>
+    </div>
+    <div class="form-group"><label>Section title</label><input name="{{ section_key }}_title" value="{{ section.get('title','') }}"></div>
+    <div class="form-group"><label>Rules text</label><textarea name="{{ section_key }}_description">{{ section.get('description','') }}</textarea></div>
+    <div class="form-row">
+        <div class="form-group"><label>Colour</label><input type="color" name="{{ section_key }}_color" value="#{{ section.get('color','991111') }}"></div>
+        <div class="form-group"><label>Thumbnail URL</label><input type="url" name="{{ section_key }}_thumbnail_url" value="{{ section.get('thumbnail_url','') }}"></div>
+    </div>
+    <div class="form-group"><label>Image URL</label><input type="url" name="{{ section_key }}_image_url" value="{{ section.get('image_url','') }}"></div>
+    <button class="danger-button" type="submit" name="action" value="delete_section" onclick="document.getElementById('section_key').value='{{ section_key }}'; return confirm('Delete this rules section?');">Delete Section</button>
+</section>
+{% else %}
+<div class="empty-state large"><span>📜</span><h3>No rule sections yet</h3><p>Create your first section above to add a button to the Discord rules menu.</p></div>
+{% endfor %}
+</div>
+
+<aside class="preview-card sticky">
+    <div class="preview-label">RULES MENU PREVIEW</div>
+    <div class="discord-message">
+        <div class="discord-avatar">☠️</div>
+        <div class="discord-body">
+            <div><strong>Pirates Bot</strong> <span class="bot-tag">BOT</span></div>
+            <div class="discord-embed">
+                <h3 data-preview-target="rules_title">{{ rules.menu.get('title','Pirates Server Rules') }}</h3>
+                <p data-preview-target="rules_description">{{ rules.menu.get('description','Choose a section below.') }}</p>
+            </div>
+            <div class="button-preview">
+                {% for section_key, section in rules.sections.items() %}
+                <button type="button" class="discord-button">{{ section.get('button_emoji','📜') }} {{ section.get('button_label',section_key|title) }}</button>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</aside>
+</div>
+<div class="save-bar"><span>Saving immediately updates the live Discord rules menu.</span><button class="primary-button" type="submit" name="action" value="save">Save and Publish</button></div>
+</form>
+{% endblock %}

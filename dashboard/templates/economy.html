@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Economy | Pirates Bot{% endblock %}
+{% block page_name %}Economy{% endblock %}
+{% block eyebrow %}TREASURE VAULT{% endblock %}
+{% block heading %}Economy Settings{% endblock %}
+{% block description %}Balance earnings, games, rewards, cooldowns, and banking for your server economy.{% endblock %}
+{% block content %}
+<form method="POST" class="settings-form">
+<div class="content-grid two">
+    <section class="panel">
+        <div class="panel-heading"><div><span class="panel-icon">🛠</span><h2>Work</h2></div></div>
+        <div class="form-row">
+            <div class="form-group"><label>Minimum reward</label><input type="number" name="work_min" value="{{ economy.work.min_reward }}"></div>
+            <div class="form-group"><label>Maximum reward</label><input type="number" name="work_max" value="{{ economy.work.max_reward }}"></div>
+        </div>
+        <div class="form-group"><label>Cooldown (seconds)</label><input type="number" name="work_cooldown" value="{{ economy.work.cooldown }}"></div>
+    </section>
+
+    <section class="panel">
+        <div class="panel-heading"><div><span class="panel-icon">🦹</span><h2>Crime</h2></div></div>
+        <div class="form-row">
+            <div class="form-group"><label>Success chance</label><input type="number" name="crime_chance" value="{{ economy.crime.success_chance }}"></div>
+            <div class="form-group"><label>Failure loss</label><input type="number" name="crime_loss" value="{{ economy.crime.fail_loss }}"></div>
+        </div>
+        <div class="form-row">
+            <div class="form-group"><label>Minimum reward</label><input type="number" name="crime_min" value="{{ economy.crime.min_reward }}"></div>
+            <div class="form-group"><label>Maximum reward</label><input type="number" name="crime_max" value="{{ economy.crime.max_reward }}"></div>
+        </div>
+        <div class="form-group"><label>Cooldown</label><input type="number" name="crime_cooldown" value="{{ economy.crime.cooldown }}"></div>
+    </section>
+
+    <section class="panel">
+        <div class="panel-heading"><div><span class="panel-icon">🏴‍☠️</span><h2>Robbery</h2></div></div>
+        <div class="form-row">
+            <div class="form-group"><label>Success chance</label><input type="number" name="rob_chance" value="{{ economy.rob.success_chance }}"></div>
+            <div class="form-group"><label>Failure loss</label><input type="number" name="rob_loss" value="{{ economy.rob.fail_loss }}"></div>
+        </div>
+        <div class="form-row">
+            <div class="form-group"><label>Minimum reward</label><input type="number" name="rob_min" value="{{ economy.rob.min_reward }}"></div>
+            <div class="form-group"><label>Maximum reward</label><input type="number" name="rob_max" value="{{ economy.rob.max_reward }}"></div>
+        </div>
+        <div class="form-group"><label>Cooldown</label><input type="number" name="rob_cooldown" value="{{ economy.rob.cooldown }}"></div>
+    </section>
+
+    <section class="panel">
+        <div class="panel-heading"><div><span class="panel-icon">🎰</span><h2>Games</h2></div></div>
+        <h3 class="subheading">Blackjack</h3>
+        <div class="form-row">
+            <div class="form-group"><label>Minimum bet</label><input type="number" name="blackjack_min" value="{{ economy.blackjack.min_bet }}"></div>
+            <div class="form-group"><label>Maximum bet</label><input type="number" name="blackjack_max" value="{{ economy.blackjack.max_bet }}"></div>
+        </div>
+        <div class="form-group"><label>Cooldown</label><input type="number" name="blackjack_cooldown" value="{{ economy.blackjack.cooldown }}"></div>
+        <h3 class="subheading">Roulette</h3>
+        <div class="form-row">
+            <div class="form-group"><label>Minimum bet</label><input type="number" name="roulette_min" value="{{ economy.roulette.min_bet }}"></div>
+            <div class="form-group"><label>Maximum bet</label><input type="number" name="roulette_max" value="{{ economy.roulette.max_bet }}"></div>
+        </div>
+        <div class="form-group"><label>Cooldown</label><input type="number" name="roulette_cooldown" value="{{ economy.roulette.cooldown }}"></div>
+    </section>
+
+    <section class="panel">
+        <div class="panel-heading"><div><span class="panel-icon">🎁</span><h2>Rewards</h2></div></div>
+        <div class="form-row">
+            <div class="form-group"><label>Daily reward</label><input type="number" name="daily_reward" value="{{ economy.daily.reward }}"></div>
+            <div class="form-group"><label>Daily cooldown</label><input type="number" name="daily_cooldown" value="{{ economy.daily.cooldown }}"></div>
+        </div>
+        <div class="form-row">
+            <div class="form-group"><label>Weekly reward</label><input type="number" name="weekly_reward" value="{{ economy.weekly.reward }}"></div>
+            <div class="form-group"><label>Weekly cooldown</label><input type="number" name="weekly_cooldown" value="{{ economy.weekly.cooldown }}"></div>
+        </div>
+    </section>
+
+    <section class="panel">
+        <div class="panel-heading"><div><span class="panel-icon">🏦</span><h2>Bank</h2></div></div>
+        <div class="form-group"><label>Maximum storage</label><input type="number" name="bank_storage" value="{{ economy.bank.max_storage }}"></div>
+        <div class="form-row">
+            <div class="form-group"><label>Interest rate</label><input type="number" name="bank_interest" value="{{ economy.bank.interest_rate }}"></div>
+            <div class="form-group"><label>Interest cooldown</label><input type="number" name="bank_interest_cooldown" value="{{ economy.bank.interest_cooldown }}"></div>
+        </div>
+    </section>
+</div>
+<div class="save-bar"><span>Review the minimum and maximum values before saving.</span><button class="primary-button" type="submit">Save Economy</button></div>
+</form>
+{% endblock %}

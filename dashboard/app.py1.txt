@@ -1,0 +1,1136 @@
+from flask import (
+    Flask, render_template, request, redirect, jsonify,
+    session, abort, url_for
+)
+import json
+import os
+import requests
+import secrets
+from functools import wraps
+from urllib.parse import urlencode
+from dotenv import load_dotenv
+
+
+load_dotenv()
+
+
+BOT_API_URL = os.getenv("BOT_API_URL", "http://127.0.0.1:10000").rstrip("/")
+
+DASHBOARD_API_KEY = os.getenv(
+    "DASHBOARD_API_KEY",
+    ""
+)
+
+
+DISCORD_API_URL = "https://discord.com/api/v10"
+DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "")
+DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET", "")
+DISCORD_REDIRECT_URI = os.getenv(
+    "DISCORD_REDIRECT_URI",
+    "http://127.0.0.1:5050/callback"
+)
+BOT_OWNER_ID = os.getenv("BOT_OWNER_ID", "")
+FLASK_SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "")
+
+# Discord permission bits.
+ADMINISTRATOR_PERMISSION = 1 << 3
+MANAGE_GUILD_PERMISSION = 1 << 5
+
+
+def bot_api_get(endpoint):
+
+    try:
+        response = requests.get(
+            f"{BOT_API_URL}{endpoint}",
+            headers={
+                "X-Dashboard-Key": DASHBOARD_API_KEY
+            },
+            timeout=3
+        )
+
+        response.raise_for_status()
+
+        return response.json()
+
+    except requests.RequestException as error:
+        print(f"Bot API error: {error}")
+        return None
+
+
+def bot_api_post(endpoint):
+    try:
+        response = requests.post(
+            f"{BOT_API_URL}{endpoint}",
+            headers={"X-Dashboard-Key": DASHBOARD_API_KEY},
+            timeout=18
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as error:
+        detail = ""
+        if getattr(error, "response", None) is not None:
+            try:
+                detail = error.response.json().get("error", "")
+            except ValueError:
+                detail = error.response.text
+        print(f"Bot apply error: {detail or error}")
+        return {"ok": False, "error": detail or str(error)}
+
+
+def apply_to_discord(feature):
+    return bot_api_post(f"/api/dashboard/apply/{feature}")
+
+BASE_FOLDER = os.path.dirname(os.path.abspath(__file__))
+
+app = Flask(
+    __name__,
+    template_folder=os.path.join(BASE_FOLDER, "templates"),
+    static_folder=os.path.join(BASE_FOLDER, "static")
+)
+
+if not FLASK_SECRET_KEY:
+    raise RuntimeError(
+        "FLASK_SECRET_KEY is missing. Add it to the dashboard .env file."
+    )
+
+app.secret_key = FLASK_SECRET_KEY
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.getenv("FLASK_COOKIE_SECURE", "false").lower() == "true",
+)
+
+
+@app.after_request
+def inject_discord_selector_script(response):
+    """Load the shared Discord selector script on dashboard HTML pages."""
+    content_type = response.headers.get("Content-Type", "")
+    if "text/html" not in content_type:
+        return response
+
+    try:
+        html = response.get_data(as_text=True)
+        script = '<script src="/static/js/discord-selectors.js"></script>'
+        if script not in html and "</body>" in html:
+            html = html.replace("</body>", f"{script}</body>")
+            response.set_data(html)
+            response.headers["Content-Length"] = len(response.get_data())
+    except (UnicodeDecodeError, RuntimeError):
+        pass
+
+    return response
+
+
+def api_json(endpoint, default=None):
+    """Fetch JSON from the running Discord bot API."""
+    data = bot_api_get(endpoint)
+    if data is None:
+        return default if default is not None else []
+    return data
+
+
+
+def discord_user_avatar(user):
+    avatar = user.get("avatar")
+    user_id = user.get("id")
+
+    if avatar and user_id:
+        return (
+            f"https://cdn.discordapp.com/avatars/"
+            f"{user_id}/{avatar}.png?size=128"
+        )
+
+    return "https://cdn.discordapp.com/embed/avatars/0.png"
+
+
+def guild_icon_url(guild):
+    guild_id = guild.get("id")
+    icon = guild.get("icon")
+
+    if guild_id and icon:
+        return (
+            f"https://cdn.discordapp.com/icons/"
+            f"{guild_id}/{icon}.png?size=128"
+        )
+
+    return ""
+
+
+def guild_is_manageable(guild):
+    if guild.get("owner"):
+        return True
+
+    try:
+        permissions = int(guild.get("permissions", "0"))
+    except (TypeError, ValueError):
+        return False
+
+    return bool(
+        permissions & ADMINISTRATOR_PERMISSION
+        or permissions & MANAGE_GUILD_PERMISSION
+    )
+
+
+def current_user():
+    return session.get("discord_user")
+
+
+def manageable_guilds():
+    return session.get("manageable_guilds", [])
+
+
+def is_bot_owner():
+    user = current_user()
+
+    return bool(
+        user
+        and BOT_OWNER_ID
+        and str(user.get("id")) == str(BOT_OWNER_ID)
+    )
+
+
+def can_manage_guild(guild_id):
+    return any(
+        str(guild.get("id")) == str(guild_id)
+        for guild in manageable_guilds()
+    )
+
+
+def login_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not current_user():
+            return redirect(url_for("login"))
+
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
+def owner_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not current_user():
+            return redirect(url_for("login"))
+
+        if not is_bot_owner():
+            abort(403)
+
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
+@app.context_processor
+def inject_auth_context():
+    return {
+        "current_user": current_user(),
+        "selected_guild_id": session.get("selected_guild_id"),
+        "is_bot_owner": is_bot_owner(),
+        "discord_user_avatar": discord_user_avatar,
+        "guild_icon_url": guild_icon_url,
+    }
+
+
+@app.before_request
+def protect_dashboard():
+    endpoint = request.endpoint or ""
+
+    public_endpoints = {
+        "login",
+        "callback",
+        "logout",
+        "static",
+    }
+
+    if endpoint in public_endpoints:
+        return None
+
+    if not current_user():
+        return redirect(url_for("login"))
+
+    # Owner-only global dashboard settings.
+    if endpoint == "settings" and not is_bot_owner():
+        abort(403)
+
+
+    selected_required_endpoints = {
+        "welcome",
+        "tickets",
+        "moderation",
+        "embeds",
+        "reaction_roles",
+        "rules",
+        "economy",
+    }
+
+    if endpoint in selected_required_endpoints:
+        selected_guild_id = session.get("selected_guild_id")
+
+        if not selected_guild_id:
+            return redirect(url_for("servers"))
+
+        if not can_manage_guild(selected_guild_id):
+            session.pop("selected_guild_id", None)
+            return redirect(url_for("servers"))
+
+    # Protect every API request containing a guild ID.
+    guild_id = request.view_args.get("guild_id") if request.view_args else None
+
+    if guild_id and not can_manage_guild(guild_id):
+        abort(403)
+
+    return None
+
+
+@app.route("/login")
+def login():
+    if current_user():
+        return redirect(url_for("servers"))
+
+    if not DISCORD_CLIENT_ID or not DISCORD_CLIENT_SECRET:
+        return (
+            "Discord OAuth is not configured. Add DISCORD_CLIENT_ID and "
+            "DISCORD_CLIENT_SECRET to .env.",
+            500,
+        )
+
+    state = secrets.token_urlsafe(32)
+    session["oauth_state"] = state
+
+    query = urlencode({
+        "client_id": DISCORD_CLIENT_ID,
+        "redirect_uri": DISCORD_REDIRECT_URI,
+        "response_type": "code",
+        "scope": "identify guilds",
+        "state": state,
+        "prompt": "none",
+    })
+
+    return redirect(f"https://discord.com/oauth2/authorize?{query}")
+
+
+@app.route("/callback")
+def callback():
+    returned_state = request.args.get("state", "")
+    expected_state = session.pop("oauth_state", "")
+
+    if not returned_state or not secrets.compare_digest(
+        returned_state,
+        expected_state
+    ):
+        abort(400, "Invalid OAuth state.")
+
+    code_value = request.args.get("code")
+
+    if not code_value:
+        abort(400, "Discord did not return an authorization code.")
+
+    token_response = requests.post(
+        f"{DISCORD_API_URL}/oauth2/token",
+        data={
+            "client_id": DISCORD_CLIENT_ID,
+            "client_secret": DISCORD_CLIENT_SECRET,
+            "grant_type": "authorization_code",
+            "code": code_value,
+            "redirect_uri": DISCORD_REDIRECT_URI,
+        },
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded"
+        },
+        timeout=10,
+    )
+    token_response.raise_for_status()
+    access_token = token_response.json()["access_token"]
+
+    auth_headers = {
+        "Authorization": f"Bearer {access_token}"
+    }
+
+    user_response = requests.get(
+        f"{DISCORD_API_URL}/users/@me",
+        headers=auth_headers,
+        timeout=10,
+    )
+    user_response.raise_for_status()
+
+    guilds_response = requests.get(
+        f"{DISCORD_API_URL}/users/@me/guilds",
+        headers=auth_headers,
+        params={"with_counts": "true"},
+        timeout=10,
+    )
+    guilds_response.raise_for_status()
+
+    user = user_response.json()
+    guilds = [
+        guild
+        for guild in guilds_response.json()
+        if guild_is_manageable(guild)
+    ]
+
+    # Do not store the OAuth access token in Flask's client-side session.
+    session.clear()
+    session["discord_user"] = {
+        "id": str(user.get("id")),
+        "username": user.get("username"),
+        "global_name": user.get("global_name"),
+        "avatar": user.get("avatar"),
+    }
+    session["manageable_guilds"] = guilds
+
+    return redirect(url_for("servers"))
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
+@app.route("/servers")
+@login_required
+def servers():
+    bot_guilds = bot_api_get("/api/guilds") or []
+    bot_guild_ids = {
+        str(guild.get("id"))
+        for guild in bot_guilds
+    }
+
+    guilds = []
+
+    for guild in manageable_guilds():
+        item = dict(guild)
+        item["bot_installed"] = str(item.get("id")) in bot_guild_ids
+        guilds.append(item)
+
+    return render_template(
+        "servers.html",
+        guilds=guilds,
+        user=current_user(),
+    )
+
+
+@app.route("/select-server/<guild_id>")
+@login_required
+def select_server(guild_id):
+    if not can_manage_guild(guild_id):
+        abort(403)
+
+    session["selected_guild_id"] = str(guild_id)
+    return redirect(url_for("home"))
+
+
+@app.route("/owner")
+@owner_required
+def owner_panel():
+    status = bot_api_get("/api/bot-status") or {}
+    commands_data = bot_api_get("/api/commands") or {}
+
+    return render_template(
+        "owner.html",
+        bot_status=status,
+        commands_data=commands_data,
+    )
+
+
+@app.route("/api/guilds")
+def dashboard_guilds():
+    bot_guilds = api_json("/api/guilds", [])
+    allowed_ids = {
+        str(guild.get("id"))
+        for guild in manageable_guilds()
+    }
+
+    return jsonify([
+        guild
+        for guild in bot_guilds
+        if str(guild.get("id")) in allowed_ids
+    ])
+
+
+@app.route("/api/guild/<guild_id>/channels")
+def dashboard_channels(guild_id):
+    return jsonify(api_json(f"/api/guild/{guild_id}/channels", []))
+
+
+@app.route("/api/guild/<guild_id>/roles")
+def dashboard_roles(guild_id):
+    return jsonify(api_json(f"/api/guild/{guild_id}/roles", []))
+
+
+@app.route("/api/guild/<guild_id>/categories")
+def dashboard_categories(guild_id):
+    return jsonify(api_json(f"/api/guild/{guild_id}/categories", []))
+
+
+@app.route("/api/guild/<guild_id>/all")
+def dashboard_guild_all(guild_id):
+    """Return channels, roles and categories in one request."""
+    return jsonify({
+        "channels": api_json(f"/api/guild/{guild_id}/channels", []),
+        "roles": api_json(f"/api/guild/{guild_id}/roles", []),
+        "categories": api_json(f"/api/guild/{guild_id}/categories", [])
+    })
+
+
+
+BASE_DIR = os.path.dirname(
+    os.path.dirname(
+        os.path.abspath(__file__)
+    )
+)
+
+ECONOMY_FILE = os.path.join(BASE_DIR, "economy.json")
+WELCOME_FILE = os.path.join(BASE_DIR, "welcome.json")
+TICKET_FILE = os.path.join(BASE_DIR, "ticket.json")
+MODERATION_FILE = os.path.join(BASE_DIR, "moderation.json")
+DASHBOARD_FILE = os.path.join(BASE_DIR, "dashboard.json")
+EMBED_FILE = os.path.join(BASE_DIR, "embeds.json")
+REACTION_ROLE_FILE = os.path.join(BASE_DIR, "reaction_roles.json")
+RULES_FILE = os.path.join(BASE_DIR, "rules.json")
+
+
+@app.route("/")
+def home():
+
+    status = bot_api_get(
+        "/api/bot-status"
+    )
+
+    commands_data = bot_api_get(
+        "/api/commands"
+    )
+
+    if status is None:
+        status = {
+            "online": False,
+            "bot_name": "Pirates Bot",
+            "servers": 0,
+            "members": 0,
+            "latency_ms": 0
+        }
+
+    if commands_data is None:
+        commands_data = {
+            "prefix_commands": [],
+            "slash_commands": [],
+            "total": 0
+        }
+
+    return render_template(
+        "index.html",
+        bot_status=status,
+        commands_data=commands_data
+    )
+
+
+@app.route("/commands")
+def commands_page():
+
+    commands_data = bot_api_get(
+        "/api/commands"
+    )
+
+    if commands_data is None:
+        commands_data = {
+            "prefix_commands": [],
+            "slash_commands": [],
+            "total": 0
+        }
+
+    return render_template(
+        "commands.html",
+        commands_data=commands_data
+    )
+    
+    
+@app.route("/economy", methods=["GET", "POST"])
+def economy():
+
+    with open(ECONOMY_FILE, "r", encoding="utf-8") as file:
+        economy = json.load(file)
+
+    # ---------- Defaults ----------
+    economy.setdefault("work", {
+        "min_reward": 10,
+        "max_reward": 100,
+        "cooldown": 600
+    })
+
+    economy.setdefault("crime", {
+        "success_chance": 50,
+        "min_reward": 50,
+        "max_reward": 250,
+        "fail_loss": 50,
+        "cooldown": 900
+    })
+
+    economy.setdefault("rob", {
+        "success_chance": 40,
+        "min_reward": 10,
+        "max_reward": 100,
+        "fail_loss": 50,
+        "cooldown": 900
+    })
+
+    economy.setdefault("blackjack", {
+        "min_bet": 10,
+        "max_bet": 1000,
+        "cooldown": 45
+    })
+
+    economy.setdefault("roulette", {
+        "min_bet": 10,
+        "max_bet": 1000,
+        "cooldown": 60
+    })
+
+    economy.setdefault("daily", {
+        "reward": 500,
+        "cooldown": 86400
+    })
+
+    economy.setdefault("weekly", {
+        "reward": 2500,
+        "cooldown": 604800
+    })
+
+    economy.setdefault("bank", {
+        "max_storage": 1000000,
+        "interest_rate": 0,
+        "interest_cooldown": 86400
+    })
+
+    if request.method == "POST":
+        # Leave your existing save code here for now.
+        with open(ECONOMY_FILE, "w", encoding="utf-8") as file:
+            json.dump(economy, file, indent=4)
+
+        apply_to_discord("economy")
+
+    return render_template(
+        "economy.html",
+        economy=economy
+    )
+    
+@app.route("/welcome", methods=["GET", "POST"])
+def welcome():
+
+    with open(WELCOME_FILE, "r", encoding="utf-8") as file:
+        welcome = json.load(file)
+
+
+    if request.method == "POST":
+
+        welcome["enabled"] = "enabled" in request.form
+
+        welcome["channel"] = request.form["channel"]
+
+        welcome["message"] = request.form["message"]
+
+        welcome["image_url"] = request.form["image_url"]
+
+        welcome["banner_url"] = request.form["banner_url"]
+
+
+        welcome["button"]["enabled"] = "button_enabled" in request.form
+
+        welcome["button"]["text"] = request.form["button_text"]
+
+        welcome["button"]["url"] = request.form["button_url"]
+
+
+        welcome["dm"]["enabled"] = "dm_enabled" in request.form
+
+        welcome["dm"]["message"] = request.form["dm_message"]
+
+
+        with open(WELCOME_FILE, "w", encoding="utf-8") as file:
+            json.dump(welcome, file, indent=4)
+
+        apply_to_discord("welcome")
+
+
+    return render_template(
+        "welcome.html",
+        welcome=welcome
+    )
+@app.route("/tickets", methods=["GET", "POST"])
+def tickets():
+
+    with open(TICKET_FILE, "r", encoding="utf-8") as file:
+        ticket = json.load(file)
+
+
+    if request.method == "POST":
+
+        ticket["enabled"] = "enabled" in request.form
+
+        ticket["category_id"] = request.form["category_id"]
+
+        ticket["staff_role_id"] = request.form["staff_role_id"]
+
+        ticket["ticket_channel"] = request.form["ticket_channel"]
+
+        ticket["message"] = request.form["message"]
+
+
+        ticket["button"]["enabled"] = "button_enabled" in request.form
+
+        ticket["button"]["text"] = request.form["button_text"]
+
+
+        ticket["settings"]["close_message"] = request.form["close_message"]
+
+        ticket["settings"]["transcript"] = "transcript" in request.form
+
+        ticket["settings"]["delete_after_close"] = "delete_after_close" in request.form
+
+
+
+        with open(TICKET_FILE, "w", encoding="utf-8") as file:
+            json.dump(ticket, file, indent=4)
+
+        apply_to_discord("tickets")
+
+
+
+    return render_template(
+        "tickets.html",
+        ticket=ticket
+    )
+
+
+@app.route("/moderation", methods=["GET", "POST"])
+def moderation():
+
+    with open(MODERATION_FILE, "r", encoding="utf-8") as file:
+        moderation = json.load(file)
+
+
+    if request.method == "POST":
+
+        moderation["enabled"] = "enabled" in request.form
+
+        moderation["log_channel"] = request.form["log_channel"]
+
+
+        # Auto Moderation
+        moderation["automod"]["enabled"] = "automod" in request.form
+
+        moderation["automod"]["anti_spam"] = "anti_spam" in request.form
+
+        moderation["automod"]["anti_links"] = "anti_links" in request.form
+
+        moderation["automod"]["word_filter"] = "word_filter" in request.form
+
+
+
+        # Warnings
+        moderation["warnings"]["enabled"] = "warnings" in request.form
+
+        moderation["warnings"]["max_warnings"] = int(
+            request.form["max_warnings"]
+        )
+
+
+
+        # Punishments
+        moderation["kick"]["enabled"] = "kick" in request.form
+
+        moderation["ban"]["enabled"] = "ban" in request.form
+
+
+        moderation["mute"]["enabled"] = "mute" in request.form
+
+        moderation["mute"]["duration"] = int(
+            request.form["mute_duration"]
+        )
+
+
+
+        with open(MODERATION_FILE, "w", encoding="utf-8") as file:
+            json.dump(moderation, file, indent=4)
+
+        apply_to_discord("moderation")
+
+
+
+    return render_template(
+        "moderation.html",
+        moderation=moderation
+    )
+
+
+@app.route("/settings", methods=["GET", "POST"])
+def settings():
+
+    with open(DASHBOARD_FILE, "r", encoding="utf-8") as file:
+        dashboard = json.load(file)
+
+
+    if request.method == "POST":
+
+        dashboard["bot_name"] = request.form["bot_name"]
+        dashboard["logo"] = request.form["logo"]
+        dashboard["title"] = request.form["title"]
+        dashboard["subtitle"] = request.form["subtitle"]
+        dashboard["status"] = request.form["status"]
+        dashboard["servers"] = request.form["servers"]
+        dashboard["commands"] = request.form["commands"]
+        dashboard["owner"] = request.form["owner"]
+
+
+        with open(DASHBOARD_FILE, "w", encoding="utf-8") as file:
+            json.dump(dashboard, file, indent=4)
+
+        apply_to_discord("settings")
+
+
+    return render_template(
+    "settings.html",
+    dashboard=dashboard
+)
+
+
+
+# =========================
+# EMBED BUILDER
+# =========================
+
+@app.route("/embeds", methods=["GET", "POST"])
+def embeds():
+
+    if not os.path.exists(EMBED_FILE):
+
+        embed = {
+            "enabled": False,
+            "channel_id": "",
+            "title": "",
+            "description": "",
+            "color": "#ff0000",
+            "footer": "",
+            "thumbnail": "",
+            "image": ""
+        }
+
+        with open(EMBED_FILE, "w", encoding="utf-8") as file:
+            json.dump(embed, file, indent=4)
+
+        apply_to_discord("embeds")
+
+
+    with open(EMBED_FILE, "r", encoding="utf-8") as file:
+        embed = json.load(file)
+
+
+
+    if request.method == "POST":
+
+        embed["enabled"] = "enabled" in request.form
+
+        embed["channel_id"] = request.form.get(
+            "channel_id",
+            ""
+        )
+
+        embed["title"] = request.form.get(
+            "title",
+            ""
+        )
+
+        embed["description"] = request.form.get(
+            "description",
+            ""
+        )
+
+        embed["color"] = request.form.get(
+            "color",
+            "#ff0000"
+        )
+
+        embed["footer"] = request.form.get(
+            "footer",
+            ""
+        )
+
+        embed["thumbnail"] = request.form.get(
+            "thumbnail",
+            ""
+        )
+
+        embed["image"] = request.form.get(
+            "image",
+            ""
+        )
+
+
+        with open(EMBED_FILE, "w", encoding="utf-8") as file:
+            json.dump(embed, file, indent=4)
+
+
+
+    return render_template(
+        "embeds.html",
+        embed=embed
+    )
+
+
+
+@app.route("/reaction-roles", methods=["GET", "POST"])
+def reaction_roles():
+
+    if not os.path.exists(REACTION_ROLE_FILE):
+
+        roles = {
+
+            "enabled": False,
+
+            "channel_id": "",
+
+            "message_id": "",
+
+            "roles": []
+
+        }
+
+
+        with open(REACTION_ROLE_FILE, "w", encoding="utf-8") as file:
+            json.dump(roles, file, indent=4)
+
+
+    with open(REACTION_ROLE_FILE, "r", encoding="utf-8") as file:
+        roles = json.load(file)
+
+
+    if request.method == "POST":
+
+        roles["enabled"] = "enabled" in request.form
+
+        roles["channel_id"] = request.form.get(
+            "channel_id",
+            ""
+        )
+
+        roles["message_id"] = request.form.get(
+            "message_id",
+            ""
+        )
+
+        emoji = request.form.get(
+            "emoji",
+            ""
+        )
+
+        role_id = request.form.get(
+            "role_id",
+            ""
+        )
+
+
+        if emoji and role_id:
+            roles["roles"].append({
+                "emoji": emoji,
+                "role_id": role_id
+            })
+
+
+        with open(REACTION_ROLE_FILE, "w", encoding="utf-8") as file:
+            json.dump(
+                roles,
+                file,
+                indent=4
+            )
+
+        apply_to_discord("reaction_roles")
+
+
+    return render_template(
+        "reaction_roles.html",
+        roles=roles
+    )
+    
+    
+    
+@app.route("/rules", methods=["GET", "POST"])
+def rules():
+
+    if not os.path.exists(RULES_FILE):
+        rules_data = {
+            "menu": {
+                "channel_id": "",
+                "title": "🏴‍☠️ Pirates Server Rules",
+                "description": "Choose a rules section below.",
+                "color": "991111",
+                "footer": "Pirates Bot Rules",
+                "image_url": "",
+                "thumbnail_url": ""
+            },
+            "sections": {}
+        }
+
+        with open(RULES_FILE, "w", encoding="utf-8") as file:
+            json.dump(
+                rules_data,
+                file,
+                indent=4,
+                ensure_ascii=False
+            )
+
+    with open(RULES_FILE, "r", encoding="utf-8") as file:
+        rules_data = json.load(file)
+
+    if request.method == "POST":
+
+        action = request.form.get("action", "save")
+
+        menu = rules_data.setdefault("menu", {})
+        sections = rules_data.setdefault("sections", {})
+
+        # -------------------------
+        # ADD A NEW RULE SECTION
+        # -------------------------
+
+        if action == "add_section":
+
+            section_key = request.form.get(
+                "new_section_key",
+                ""
+            ).strip().lower()
+
+            section_key = section_key.replace(" ", "_")
+
+            if section_key and section_key not in sections:
+                sections[section_key] = {
+                    "button_label": "New Rules",
+                    "button_emoji": "📜",
+                    "title": "📜 New Rules",
+                    "description": "Add your rules here.",
+                    "color": "991111",
+                    "image_url": "",
+                    "thumbnail_url": ""
+                }
+
+        # -------------------------
+        # DELETE A RULE SECTION
+        # -------------------------
+
+        elif action == "delete_section":
+
+            section_key = request.form.get(
+                "section_key",
+                ""
+            )
+
+            sections.pop(section_key, None)
+
+        # -------------------------
+        # SAVE ALL SETTINGS
+        # -------------------------
+
+        else:
+
+            menu["channel_id"] = request.form.get(
+                "menu_channel_id",
+                ""
+            )
+
+            menu["title"] = request.form.get(
+                "menu_title",
+                "🏴‍☠️ Pirates Server Rules"
+            )
+
+            menu["description"] = request.form.get(
+                "menu_description",
+                ""
+            )
+
+            menu["color"] = request.form.get(
+                "menu_color",
+                "991111"
+            ).replace("#", "")
+
+            menu["footer"] = request.form.get(
+                "menu_footer",
+                ""
+            )
+
+            menu["image_url"] = request.form.get(
+                "menu_image_url",
+                ""
+            )
+
+            menu["thumbnail_url"] = request.form.get(
+                "menu_thumbnail_url",
+                ""
+            )
+
+            for section_key, section in sections.items():
+
+                section["button_label"] = request.form.get(
+                    f"{section_key}_button_label",
+                    section.get(
+                        "button_label",
+                        section_key.title()
+                    )
+                )
+
+                section["button_emoji"] = request.form.get(
+                    f"{section_key}_button_emoji",
+                    section.get("button_emoji", "")
+                )
+
+                section["title"] = request.form.get(
+                    f"{section_key}_title",
+                    section.get(
+                        "title",
+                        section_key.title()
+                    )
+                )
+
+                section["description"] = request.form.get(
+                    f"{section_key}_description",
+                    section.get("description", "")
+                )
+
+                section["color"] = request.form.get(
+                    f"{section_key}_color",
+                    section.get("color", "991111")
+                ).replace("#", "")
+
+                section["image_url"] = request.form.get(
+                    f"{section_key}_image_url",
+                    section.get("image_url", "")
+                )
+
+                section["thumbnail_url"] = request.form.get(
+                    f"{section_key}_thumbnail_url",
+                    section.get("thumbnail_url", "")
+                )
+
+        with open(RULES_FILE, "w", encoding="utf-8") as file:
+            json.dump(
+                rules_data,
+                file,
+                indent=4,
+                ensure_ascii=False
+            )
+
+        apply_to_discord("rules")
+        return redirect("/rules")
+
+    return render_template(
+        "rules.html",
+        rules=rules_data
+    )
+
+if __name__ == "__main__":
+    print("RUNNING FILE:", os.path.abspath(__file__))
+
+    app.run(
+        host="127.0.0.1",
+        port=5050,
+        debug=True,
+        use_reloader=False
+    )

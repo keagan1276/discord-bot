@@ -1,0 +1,791 @@
+{% extends "base.html" %}
+
+{% block title %}
+Auto Announcements | Pirates Bot
+{% endblock %}
+
+{% block page_name %}
+Auto Announcements
+{% endblock %}
+
+{% block eyebrow %}
+MESSAGE AUTOMATION
+{% endblock %}
+
+{% block heading %}
+📢 Auto Announcements
+{% endblock %}
+
+{% block description %}
+Schedule repeating messages for selected Discord channels.
+{% endblock %}
+
+{% block head %}
+
+<style>
+    .announcement-layout {
+        display: grid;
+        grid-template-columns:
+            minmax(0, 1fr)
+            minmax(320px, 430px);
+        gap: 18px;
+        align-items: start;
+    }
+
+    .announcement-intro {
+        margin: 0 0 18px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.7;
+    }
+
+    .announcement-toggle-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #0d1013;
+    }
+
+    .announcement-toggle-row strong,
+    .announcement-toggle-row small {
+        display: block;
+    }
+
+    .announcement-toggle-row strong {
+        font-size: 12px;
+    }
+
+    .announcement-toggle-row small {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 10px;
+    }
+
+    .announcement-message {
+        min-height: 180px;
+    }
+
+    .interval-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 150px;
+        gap: 10px;
+    }
+
+    .announcement-preview {
+        padding: 16px;
+        border-radius: 10px;
+        background: #313338;
+        color: #dbdee1;
+    }
+
+    .announcement-preview-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 12px;
+    }
+
+    .announcement-avatar {
+        display: grid;
+        place-items: center;
+        width: 40px;
+        height: 40px;
+        flex: 0 0 40px;
+        border-radius: 50%;
+        background: #5a1e1e;
+        font-size: 20px;
+    }
+
+    .announcement-preview-header strong,
+    .announcement-preview-header small {
+        display: block;
+    }
+
+    .announcement-preview-header strong {
+        font-size: 12px;
+    }
+
+    .announcement-preview-header small {
+        margin-top: 2px;
+        color: #949ba4;
+        font-size: 9px;
+    }
+
+    .announcement-preview-content {
+        min-height: 52px;
+        padding-left: 50px;
+        overflow-wrap: anywhere;
+        white-space: pre-wrap;
+        font-size: 12px;
+        line-height: 1.6;
+    }
+
+    .announcement-list {
+        display: grid;
+        gap: 12px;
+    }
+
+    .announcement-card {
+        padding: 15px;
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        background: #0d1013;
+    }
+
+    .announcement-card-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: flex-start;
+    }
+
+    .announcement-card-header strong,
+    .announcement-card-header small {
+        display: block;
+    }
+
+    .announcement-card-header strong {
+        font-size: 12px;
+    }
+
+    .announcement-card-header small {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 9px;
+    }
+
+    .announcement-state {
+        flex: 0 0 auto;
+        padding: 5px 8px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        font-size: 8px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .announcement-state.enabled {
+        color: #aef0bf;
+        border-color: rgba(54, 207, 104, 0.25);
+        background: rgba(54, 207, 104, 0.09);
+    }
+
+    .announcement-state.disabled {
+        color: #ffb0b0;
+        border-color: rgba(185, 46, 46, 0.25);
+        background: rgba(185, 46, 46, 0.09);
+    }
+
+    .announcement-text {
+        margin: 13px 0;
+        padding: 12px;
+        overflow-wrap: anywhere;
+        border-left: 3px solid var(--gold);
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.025);
+        color: #c8ccd0;
+        white-space: pre-wrap;
+        font-size: 10px;
+        line-height: 1.6;
+    }
+
+    .announcement-meta {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-bottom: 13px;
+    }
+
+    .announcement-meta div {
+        padding: 9px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.02);
+    }
+
+    .announcement-meta span,
+    .announcement-meta strong {
+        display: block;
+    }
+
+    .announcement-meta span {
+        color: var(--muted);
+        font-size: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .announcement-meta strong {
+        margin-top: 4px;
+        overflow: hidden;
+        font-size: 10px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .announcement-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .announcement-edit,
+    .announcement-delete {
+        padding: 8px 11px;
+        border-radius: 7px;
+        font: inherit;
+        font-size: 10px;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .announcement-edit {
+        border: 1px solid rgba(213, 162, 72, 0.24);
+        background: #423017;
+        color: #f3d49b;
+    }
+
+    .announcement-delete {
+        border: 1px solid rgba(185, 46, 46, 0.3);
+        background: #421717;
+        color: #ffb0b0;
+    }
+
+    .announcement-empty {
+        padding: 34px 18px;
+        border: 1px dashed var(--line);
+        border-radius: 11px;
+        color: var(--muted);
+        text-align: center;
+    }
+
+    .announcement-empty span {
+        display: block;
+        margin-bottom: 10px;
+        font-size: 32px;
+    }
+
+    .announcement-empty strong {
+        display: block;
+        margin-bottom: 5px;
+        color: #ffffff;
+        font-size: 13px;
+    }
+
+    .announcement-empty p {
+        margin: 0;
+        font-size: 10px;
+        line-height: 1.6;
+    }
+
+    @media (max-width: 1050px) {
+        .announcement-layout {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @media (max-width: 600px) {
+        .interval-row,
+        .announcement-meta {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+
+{% endblock %}
+
+{% block content %}
+
+<div class="announcement-layout">
+
+```
+<section class="panel">
+
+    <div class="panel-heading">
+        <div>
+            <span class="panel-icon">📢</span>
+            <h2>Create or edit an announcement</h2>
+        </div>
+    </div>
+
+    <p class="announcement-intro">
+        Pirates Bot checks once per minute and sends enabled announcements
+        when their configured interval has passed.
+    </p>
+
+    <form
+        method="POST"
+        action="{{ url_for('auto_announcements') }}"
+        id="announcement-form"
+    >
+        <input
+            type="hidden"
+            name="action"
+            value="save"
+        >
+
+        <input
+            type="hidden"
+            name="announcement_id"
+            id="announcement_id"
+            value=""
+        >
+
+        <div class="form-group">
+            <label for="channel_id">
+                Discord channel
+            </label>
+
+            <p class="help">
+                Select the text channel where the announcement should be sent.
+            </p>
+
+            <select
+                id="channel_id"
+                name="channel_id"
+                required
+                data-discord-select="channels"
+                data-guild-id="{{ selected_guild_id }}"
+                data-placeholder="Select a text channel"
+            >
+                <option value="">
+                    Select a text channel
+                </option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <div class="announcement-toggle-row">
+                <div>
+                    <strong>Enable this announcement</strong>
+
+                    <small>
+                        Disabled announcements remain saved but are not sent.
+                    </small>
+                </div>
+
+                <label class="switch large">
+                    <input
+                        type="checkbox"
+                        id="enabled"
+                        name="enabled"
+                        checked
+                    >
+
+                    <span></span>
+                </label>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="interval_minutes">
+                Repeat interval
+            </label>
+
+            <p class="help">
+                The shortest allowed interval is one minute.
+            </p>
+
+            <div class="interval-row">
+                <input
+                    type="number"
+                    id="interval_minutes"
+                    name="interval_minutes"
+                    min="1"
+                    max="525600"
+                    value="60"
+                    required
+                >
+
+                <select id="interval_preset">
+                    <option value="">
+                        Presets
+                    </option>
+
+                    <option value="5">
+                        Every 5 minutes
+                    </option>
+
+                    <option value="15">
+                        Every 15 minutes
+                    </option>
+
+                    <option value="30">
+                        Every 30 minutes
+                    </option>
+
+                    <option value="60">
+                        Every hour
+                    </option>
+
+                    <option value="360">
+                        Every 6 hours
+                    </option>
+
+                    <option value="720">
+                        Every 12 hours
+                    </option>
+
+                    <option value="1440">
+                        Every day
+                    </option>
+
+                    <option value="10080">
+                        Every week
+                    </option>
+                </select>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="message">
+                Announcement message
+            </label>
+
+            <p class="help">
+                Discord messages can contain up to 2,000 characters.
+            </p>
+
+            <textarea
+                id="message"
+                name="message"
+                class="announcement-message"
+                maxlength="2000"
+                required
+                placeholder="📢 Remember to check the latest server announcements!"
+            ></textarea>
+
+            <p
+                class="help"
+                id="announcement-character-count"
+            >
+                0 / 2000 characters
+            </p>
+        </div>
+
+        <div class="form-group">
+            <label>
+                Discord preview
+            </label>
+
+            <div class="announcement-preview">
+                <div class="announcement-preview-header">
+                    <div class="announcement-avatar">
+                        ☠️
+                    </div>
+
+                    <div>
+                        <strong>
+                            Pirates Bot
+                            <span class="bot-tag">BOT</span>
+                        </strong>
+
+                        <small>Today at 12:00</small>
+                    </div>
+                </div>
+
+                <div
+                    class="announcement-preview-content"
+                    id="announcement-preview-content"
+                >
+                    📢 Your announcement preview will appear here.
+                </div>
+            </div>
+        </div>
+
+        <div class="save-bar">
+            <span id="save-bar-text">
+                Create a new repeating announcement.
+            </span>
+
+            <button
+                type="submit"
+                class="primary-button"
+                id="announcement-submit"
+            >
+                Save Announcement
+            </button>
+        </div>
+
+    </form>
+
+</section>
+
+<section class="panel">
+
+    <div class="panel-heading">
+        <div>
+            <span class="panel-icon">📋</span>
+            <h2>Saved announcements</h2>
+        </div>
+
+        <span class="pill">
+            {{ announcements|length }} saved
+        </span>
+    </div>
+
+    {% if announcements %}
+
+    <div class="announcement-list">
+
+        {% for announcement in announcements %}
+
+        <article class="announcement-card">
+
+            <div class="announcement-card-header">
+                <div>
+                    <strong>
+                        Announcement {{ loop.index }}
+                    </strong>
+
+                    <small>
+                        ID: {{ announcement.get("id", "") }}
+                    </small>
+                </div>
+
+                {% if announcement.get("enabled") %}
+
+                <span class="announcement-state enabled">
+                    Enabled
+                </span>
+
+                {% else %}
+
+                <span class="announcement-state disabled">
+                    Disabled
+                </span>
+
+                {% endif %}
+            </div>
+
+            <div class="announcement-text">
+                {{ announcement.get("message", "No message configured.") }}
+            </div>
+
+            <div class="announcement-meta">
+                <div>
+                    <span>Channel</span>
+
+                    <strong>
+                        {{ announcement.get("channel_id", "Not selected") }}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Interval</span>
+
+                    <strong>
+                        {{ (announcement.get("interval", 3600) / 60)|int }}
+                        minutes
+                    </strong>
+                </div>
+            </div>
+
+            <div class="announcement-actions">
+
+                <button
+                    type="button"
+                    class="announcement-edit"
+                    data-edit-announcement
+                    data-id="{{ announcement.get('id', '') }}"
+                    data-channel-id="{{ announcement.get('channel_id', '') }}"
+                    data-message="{{ announcement.get('message', '')|e }}"
+                    data-interval-minutes="{{ (announcement.get('interval', 3600) / 60)|int }}"
+                    data-enabled="{{ 'true' if announcement.get('enabled') else 'false' }}"
+                >
+                    Edit
+                </button>
+
+                <form
+                    method="POST"
+                    action="{{ url_for('auto_announcements') }}"
+                    onsubmit="return confirm('Delete this auto announcement?');"
+                >
+                    <input
+                        type="hidden"
+                        name="action"
+                        value="delete"
+                    >
+
+                    <input
+                        type="hidden"
+                        name="announcement_id"
+                        value="{{ announcement.get('id', '') }}"
+                    >
+
+                    <button
+                        type="submit"
+                        class="announcement-delete"
+                    >
+                        Delete
+                    </button>
+                </form>
+
+            </div>
+
+        </article>
+
+        {% endfor %}
+
+    </div>
+
+    {% else %}
+
+    <div class="announcement-empty">
+        <span>📢</span>
+
+        <strong>
+            No auto announcements configured
+        </strong>
+
+        <p>
+            Select a channel, set an interval and enter a message to
+            create your first repeating announcement.
+        </p>
+    </div>
+
+    {% endif %}
+
+</section>
+```
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+
+<script>
+    document.addEventListener(
+        "DOMContentLoaded",
+        () => {
+            const idInput = document.getElementById(
+                "announcement_id"
+            );
+
+            const channelSelect = document.getElementById(
+                "channel_id"
+            );
+
+            const enabledInput = document.getElementById(
+                "enabled"
+            );
+
+            const intervalInput = document.getElementById(
+                "interval_minutes"
+            );
+
+            const intervalPreset = document.getElementById(
+                "interval_preset"
+            );
+
+            const messageInput = document.getElementById(
+                "message"
+            );
+
+            const previewContent = document.getElementById(
+                "announcement-preview-content"
+            );
+
+            const characterCount = document.getElementById(
+                "announcement-character-count"
+            );
+
+            const submitButton = document.getElementById(
+                "announcement-submit"
+            );
+
+            const saveBarText = document.getElementById(
+                "save-bar-text"
+            );
+
+            function updatePreview() {
+                const message = messageInput.value.trim();
+
+                previewContent.textContent = (
+                    message
+                    || "📢 Your announcement preview will appear here."
+                );
+
+                characterCount.textContent = (
+                    `${messageInput.value.length} / 2000 characters`
+                );
+            }
+
+            intervalPreset.addEventListener(
+                "change",
+                () => {
+                    if (intervalPreset.value) {
+                        intervalInput.value = intervalPreset.value;
+                    }
+                }
+            );
+
+            messageInput.addEventListener(
+                "input",
+                updatePreview
+            );
+
+            document.querySelectorAll(
+                "[data-edit-announcement]"
+            ).forEach(
+                (button) => {
+                    button.addEventListener(
+                        "click",
+                        () => {
+                            idInput.value = (
+                                button.dataset.id
+                                || ""
+                            );
+
+                            channelSelect.value = (
+                                button.dataset.channelId
+                                || ""
+                            );
+
+                            intervalInput.value = (
+                                button.dataset.intervalMinutes
+                                || "60"
+                            );
+
+                            messageInput.value = (
+                                button.dataset.message
+                                || ""
+                            );
+
+                            enabledInput.checked = (
+                                button.dataset.enabled
+                                === "true"
+                            );
+
+                            submitButton.textContent = (
+                                "Update Announcement"
+                            );
+
+                            saveBarText.textContent = (
+                                "Update the selected repeating announcement."
+                            );
+
+                            updatePreview();
+
+                            document.getElementById(
+                                "announcement-form"
+                            ).scrollIntoView({
+                                behavior: "smooth",
+                                block: "start"
+                            });
+                        }
+                    );
+                }
+            );
+
+            updatePreview();
+        }
+    );
+</script>
+
+{% endblock %}

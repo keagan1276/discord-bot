@@ -1,0 +1,26 @@
+{
+    "guilds": {
+        "1257004738340323379": {
+            "1109630095234179163": {
+                "job": "privateer",
+                "level": 1,
+                "xp": 29,
+                "total_earned": 189,
+                "successful_jobs": 1,
+                "failed_jobs": 0,
+                "last_worked": 1784989833.7592082
+            }
+        },
+        "1524422636942393445": {
+            "1528707648344686692": {
+                "job": "privateer",
+                "level": 1,
+                "xp": 0,
+                "total_earned": 0,
+                "successful_jobs": 0,
+                "failed_jobs": 1,
+                "last_worked": 1785007805.5873387
+            }
+        }
+    }
+}

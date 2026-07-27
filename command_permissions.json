@@ -1,0 +1,42 @@
+{
+    "guilds": {
+        "1257004738340323379": {
+            "commands": {
+                "poll": "staff",
+                "8ball": "everyone",
+                "pirate": "everyone",
+                "giveaway": "staff",
+                "embed": "staff",
+                "job": "everyone",
+                "dailyjob": "everyone",
+                "jobinfo": "everyone",
+                "jobleaderboard": "everyone",
+                "setjobpay": "everyone",
+                "balance": "everyone",
+                "work": "everyone",
+                "daily": "everyone",
+                "deposit": "everyone",
+                "withdraw": "everyone",
+                "slots": "everyone",
+                "setreactionrole": "staff",
+                "pay": "everyone",
+                "rob": "everyone",
+                "leaderboard": "everyone",
+                "blackjack": "everyone",
+                "roulette": "everyone",
+                "setwelcome": "staff",
+                "removewelcome": "staff",
+                "removeallmsgs": "staff",
+                "setautorole": "everyone",
+                "removeautorole": "staff",
+                "money": "everyone",
+                "balanceof": "everyone",
+                "help": "everyone",
+                "rulesmenu": "staff",
+                "addmoney": "staff",
+                "removemoney": "staff",
+                "economywipe": "staff"
+            }
+        }
+    }
+}

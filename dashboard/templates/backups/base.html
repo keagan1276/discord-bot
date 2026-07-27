@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Pirates Bot{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard-system.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body>
+<div class="pirate-border-layer" aria-hidden="true"></div>
+<div class="pirate-border-vignette" aria-hidden="true"></div>
+<div class="app-shell">
+    <aside class="app-sidebar">
+        <a href="/" class="app-brand">
+            <div class="brand-skull">☠️</div>
+            <div>
+                <strong>PIRATES BOT</strong>
+                <small>Command the seas</small>
+            </div>
+        </a>
+
+        <nav class="app-nav">
+            <a href="/" class="{{ 'active' if request.path == '/' else '' }}">⌂ <span>Dashboard</span></a>
+            <a href="/commands" class="{{ 'active' if request.path.startswith('/commands') else '' }}">⌁ <span>Commands</span></a>
+            <a href="/welcome" class="{{ 'active' if request.path.startswith('/welcome') else '' }}">👋 <span>Welcome</span></a>
+            <a href="/tickets" class="{{ 'active' if request.path.startswith('/tickets') else '' }}">🎟 <span>Tickets</span></a>
+            <a href="/rules" class="{{ 'active' if request.path.startswith('/rules') else '' }}">📜 <span>Rules</span></a>
+            <a href="/reaction-roles" class="{{ 'active' if request.path.startswith('/reaction-roles') else '' }}">🙂 <span>Reaction Roles</span></a>
+            <a href="/moderation" class="{{ 'active' if request.path.startswith('/moderation') else '' }}">🛡 <span>Moderation</span></a>
+            <a href="/embeds" class="{{ 'active' if request.path.startswith('/embeds') else '' }}">🖋 <span>Embeds</span></a>
+            <a href="/economy" class="{{ 'active' if request.path.startswith('/economy') else '' }}">💰 <span>Economy</span></a>
+            <a href="/settings" class="{{ 'active' if request.path.startswith('/settings') else '' }}">⚙ <span>Settings</span></a>
+        </nav>
+
+        <div class="sidebar-footer">
+            {% if current_user %}
+            <div class="user-row">
+                <img src="{{ discord_user_avatar(current_user) }}" alt="">
+                <div>
+                    <strong>{{ current_user.global_name or current_user.username }}</strong>
+                    <small>Signed in with Discord</small>
+                </div>
+            </div>
+            <a href="/servers">Switch server</a>
+            <a href="/logout">Log out</a>
+            {% else %}
+            <small>Pirates Bot Dashboard</small>
+            {% endif %}
+        </div>
+    </aside>
+
+    <main class="app-main">
+        <header class="topbar">
+            <button class="mobile-menu" type="button" data-sidebar-toggle>☰</button>
+            <div>
+                <strong>{% block page_name %}Dashboard{% endblock %}</strong>
+                {% if selected_guild_id %}
+                <small>Managing server {{ selected_guild_id }}</small>
+                {% else %}
+                <small>Pirates Bot control panel</small>
+                {% endif %}
+            </div>
+            <div class="topbar-actions">
+                {% if is_bot_owner %}
+                <span class="owner-badge">Owner</span>
+                {% endif %}
+                <span class="connection-badge"><i></i> Connected</span>
+            </div>
+        </header>
+
+        <section class="page-wrap">
+            <div class="page-hero">
+                <div>
+                    <span class="eyebrow">{% block eyebrow %}PIRATES BOT{% endblock %}</span>
+                    <h1>{% block heading %}Dashboard{% endblock %}</h1>
+                    <p>{% block description %}Manage your server with Pirates Bot.{% endblock %}</p>
+                </div>
+                <div class="page-hero-actions">
+                    {% block hero_actions %}{% endblock %}
+                </div>
+            </div>
+
+            {% if request.args.get('saved') %}
+            <div class="alert success">✅ Settings saved successfully.</div>
+            {% endif %}
+
+            {% block content %}{% endblock %}
+        </section>
+    </main>
+</div>
+
+<script src="{{ url_for('static', filename='js/dashboard-system.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

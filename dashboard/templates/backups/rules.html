@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Pirates Bot Rules Menu</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/style.css') }}"
+    >
+</head>
+
+
+<body>
+
+<div class="main">
+
+    <h2>📜 Rules Menu Settings</h2>
+
+    <p class="subtitle">
+        Change the rules menu, Discord channel, buttons and rule sections.
+    </p>
+
+
+    <form method="POST">
+
+        <input
+            type="hidden"
+            name="section_key"
+            id="section_key"
+            value=""
+        >
+
+
+        <!-- MAIN RULES MENU -->
+
+        <div class="settings-card">
+
+            <h3>🏴‍☠️ Main Rules Menu</h3>
+
+
+            <label>Rules Channel ID</label>
+
+            <input
+                type="text"
+                name="menu_channel_id"
+                value="{{ rules.menu.get('channel_id', '') }}"
+                placeholder="Paste the Discord channel ID"
+            >
+
+
+            <label>Main title</label>
+
+            <input
+                type="text"
+                name="menu_title"
+                value="{{ rules.menu.get('title', '') }}"
+            >
+
+
+            <label>Main description</label>
+
+            <textarea
+                name="menu_description"
+            >{{ rules.menu.get('description', '') }}</textarea>
+
+
+            <label>Embed colour</label>
+
+            <input
+                type="text"
+                name="menu_color"
+                value="{{ rules.menu.get('color', '991111') }}"
+                placeholder="991111"
+            >
+
+
+            <label>Footer text</label>
+
+            <input
+                type="text"
+                name="menu_footer"
+                value="{{ rules.menu.get('footer', '') }}"
+            >
+
+
+            <label>Main image URL</label>
+
+            <input
+                type="url"
+                name="menu_image_url"
+                value="{{ rules.menu.get('image_url', '') }}"
+                placeholder="https://example.com/rules-banner.png"
+            >
+
+
+            <label>Thumbnail URL</label>
+
+            <input
+                type="url"
+                name="menu_thumbnail_url"
+                value="{{ rules.menu.get('thumbnail_url', '') }}"
+                placeholder="https://example.com/pirate-logo.png"
+            >
+
+
+            {% if rules.menu.get('image_url') %}
+
+                <div class="rules-image-preview">
+
+                    <p>Current main image</p>
+
+                    <img
+                        src="{{ rules.menu.get('image_url') }}"
+                        alt="Rules menu image"
+                    >
+
+                </div>
+
+            {% endif %}
+
+        </div>
+
+
+        <!-- ADD NEW SECTION -->
+
+        <div class="settings-card">
+
+            <h3>➕ Add New Rules Section</h3>
+
+            <p class="subtitle">
+                Create any category, such as gaming rules, voice rules or staff rules.
+            </p>
+
+            <label>New section name</label>
+
+            <input
+                type="text"
+                name="new_section_key"
+                placeholder="Example: voice_rules"
+            >
+
+            <button
+                type="submit"
+                name="action"
+                value="add_section"
+                class="save-button"
+            >
+                ➕ Add Rules Section
+            </button>
+
+        </div>
+
+
+        <!-- EXISTING RULE SECTIONS -->
+
+        {% for section_key, section in rules.sections.items() %}
+
+            <div class="settings-card">
+
+                <h3>
+                    {{ section.get('button_emoji', '📜') }}
+                    {{ section.get('button_label', section_key|replace('_', ' ')|title) }}
+                </h3>
+
+
+                <p class="section-key">
+                    Section key: {{ section_key }}
+                </p>
+
+
+                <label>Button text</label>
+
+                <input
+                    type="text"
+                    name="{{ section_key }}_button_label"
+                    value="{{ section.get('button_label', section_key|replace('_', ' ')|title) }}"
+                >
+
+
+                <label>Button emoji</label>
+
+                <input
+                    type="text"
+                    name="{{ section_key }}_button_emoji"
+                    value="{{ section.get('button_emoji', '') }}"
+                    placeholder="📜"
+                >
+
+
+                <label>Rules embed title</label>
+
+                <input
+                    type="text"
+                    name="{{ section_key }}_title"
+                    value="{{ section.get('title', section_key|replace('_', ' ')|title) }}"
+                >
+
+
+                <label>Rules text</label>
+
+                <textarea
+                    name="{{ section_key }}_description"
+                >{{ section.get('description', '') }}</textarea>
+
+
+                <label>Embed colour</label>
+
+                <input
+                    type="text"
+                    name="{{ section_key }}_color"
+                    value="{{ section.get('color', '991111') }}"
+                    placeholder="991111"
+                >
+
+
+                <label>Large image URL</label>
+
+                <input
+                    type="url"
+                    name="{{ section_key }}_image_url"
+                    value="{{ section.get('image_url', '') }}"
+                    placeholder="https://example.com/rules-image.png"
+                >
+
+
+                <label>Thumbnail URL</label>
+
+                <input
+                    type="url"
+                    name="{{ section_key }}_thumbnail_url"
+                    value="{{ section.get('thumbnail_url', '') }}"
+                    placeholder="https://example.com/icon.png"
+                >
+
+
+                {% if section.get('image_url') %}
+
+                    <div class="rules-image-preview">
+
+                        <p>Current section image</p>
+
+                        <img
+                            src="{{ section.get('image_url') }}"
+                            alt="{{ section.get('title', 'Rule section') }}"
+                        >
+
+                    </div>
+
+                {% endif %}
+
+
+                <button
+                    type="submit"
+                    name="action"
+                    value="delete_section"
+                    class="delete-button"
+                    onclick="
+                        document.getElementById('section_key').value='{{ section_key }}';
+                        return confirm('Delete this rules section?');
+                    "
+                >
+                    🗑 Delete This Section
+                </button>
+
+            </div>
+
+        {% endfor %}
+
+
+        <button
+            class="save-button"
+            type="submit"
+            name="action"
+            value="save"
+        >
+            🔥 Save Rules Menu
+        </button>
+
+    </form>
+
+
+    <br><br>
+
+
+    <a
+        href="/"
+        class="back-button"
+    >
+        ⬅ Back to Dashboard
+    </a>
+
+</div>
+<script src="{{ url_for('static', filename='js/discord-selectors.js') }}"></script>
+</body>
+
+</html>

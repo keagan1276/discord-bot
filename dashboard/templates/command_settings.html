@@ -1,0 +1,561 @@
+{% extends "base.html" %}
+
+{% block title %}Command Permissions | Pirates Bot{% endblock %}
+{% block page_name %}Command Permissions{% endblock %}
+{% block eyebrow %}SERVER COMMAND CONTROL{% endblock %}
+{% block heading %}Command Permissions{% endblock %}
+{% block description %}
+Choose which commands members can use in the currently selected Discord server.
+{% endblock %}
+
+{% block content %}
+<div class="command-settings-page">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="flash-area">
+                {% for category, message in messages %}
+                    <div class="flash-message {{ category }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <section class="command-permission-hero">
+        <div>
+            <span class="permission-badge">
+                🛡️ SERVER-SPECIFIC SETTINGS
+            </span>
+
+            <h2>Control command access</h2>
+
+            <p>
+                These permissions only apply to the server currently selected
+                in the dashboard.
+            </p>
+        </div>
+
+        <div class="permission-key">
+            <span class="key-item everyone-key">
+                Everyone
+            </span>
+
+            <span class="key-item staff-key">
+                Staff only
+            </span>
+
+            <span class="key-item disabled-key">
+                Disabled
+            </span>
+        </div>
+    </section>
+
+    <form method="POST">
+
+        <section class="command-permission-section">
+            <div class="section-heading">
+                <div>
+                    <span class="section-label">MEMBERS</span>
+                    <h2>Member Commands</h2>
+                    <p>
+                        Choose whether these commands are available to everyone,
+                        staff only, or completely disabled.
+                    </p>
+                </div>
+
+                <span class="command-count">
+                    {{ member_commands|length }}
+                </span>
+            </div>
+
+            <div class="permission-grid">
+                {% for command in member_commands %}
+                    <article class="permission-card">
+                        <div class="permission-card-top">
+                            <div class="command-icon">
+                                {% if command.type == "slash" %}
+                                    /
+                                {% else %}
+                                    !
+                                {% endif %}
+                            </div>
+
+                            <span class="command-type">
+                                {{ command.type }}
+                            </span>
+                        </div>
+
+                        <code class="command-name">
+                            {% if command.type == "slash" %}/{% else %}!{% endif %}{{ command.name }}
+                        </code>
+
+                        <p class="command-description">
+                            {{ command.description }}
+                        </p>
+
+                        <div class="form-group">
+                            <label for="command_{{ command.name|lower }}">
+                                Access
+                            </label>
+
+                            <select
+                                id="command_{{ command.name|lower }}"
+                                name="command_{{ command.name|lower }}"
+                            >
+                                <option
+                                    value="everyone"
+                                    {% if command.access == "everyone" %}selected{% endif %}
+                                >
+                                    Everyone
+                                </option>
+
+                                <option
+                                    value="staff"
+                                    {% if command.access == "staff" %}selected{% endif %}
+                                >
+                                    Staff only
+                                </option>
+
+                                <option
+                                    value="disabled"
+                                    {% if command.access == "disabled" %}selected{% endif %}
+                                >
+                                    Disabled
+                                </option>
+                            </select>
+                        </div>
+                    </article>
+                {% else %}
+                    <div class="empty-state">
+                        <span>⚓</span>
+                        <h3>No member commands found</h3>
+                        <p>
+                            The bot API did not return any member commands.
+                        </p>
+                    </div>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="command-permission-section admin-section">
+            <div class="section-heading">
+                <div>
+                    <span class="section-label">STAFF</span>
+                    <h2>Admin & Moderation Commands</h2>
+                    <p>
+                        Protected commands cannot be changed to Everyone.
+                    </p>
+                </div>
+
+                <span class="command-count">
+                    {{ admin_commands|length }}
+                </span>
+            </div>
+
+            <div class="permission-grid">
+                {% for command in admin_commands %}
+                    <article class="permission-card protected-card">
+                        <div class="permission-card-top">
+                            <div class="command-icon protected-icon">
+                                🛡️
+                            </div>
+
+                            <span class="protected-label">
+                                Protected
+                            </span>
+                        </div>
+
+                        <code class="command-name">
+                            {% if command.type == "slash" %}/{% else %}!{% endif %}{{ command.name }}
+                        </code>
+
+                        <p class="command-description">
+                            {{ command.description }}
+                        </p>
+
+                        <div class="form-group">
+                            <label for="command_{{ command.name|lower }}">
+                                Access
+                            </label>
+
+                            <select
+                                id="command_{{ command.name|lower }}"
+                                name="command_{{ command.name|lower }}"
+                            >
+                                <option
+                                    value="staff"
+                                    {% if command.access == "staff" %}selected{% endif %}
+                                >
+                                    Staff only
+                                </option>
+
+                                <option
+                                    value="disabled"
+                                    {% if command.access == "disabled" %}selected{% endif %}
+                                >
+                                    Disabled
+                                </option>
+                            </select>
+
+                            <small>
+                                This command cannot be made available to everyone.
+                            </small>
+                        </div>
+                    </article>
+                {% else %}
+                    <div class="empty-state">
+                        <span>🛡️</span>
+                        <h3>No protected commands found</h3>
+                        <p>
+                            The bot API did not return any protected commands.
+                        </p>
+                    </div>
+                {% endfor %}
+            </div>
+        </section>
+
+        <div class="save-bar">
+            <div>
+                <strong>Save command permissions</strong>
+
+                <span>
+                    These settings only affect the selected Discord server.
+                </span>
+            </div>
+
+            <button type="submit" class="save-button">
+                💾 Save Command Permissions
+            </button>
+        </div>
+    </form>
+</div>
+
+<style>
+.command-settings-page {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 10px 0 80px;
+}
+
+.command-permission-hero {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 25px;
+    margin-bottom: 24px;
+    padding: 28px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 20px;
+    background:
+        radial-gradient(
+            circle at top right,
+            rgba(174, 46, 46, 0.28),
+            transparent 38%
+        ),
+        linear-gradient(
+            135deg,
+            rgba(97, 17, 17, 0.96),
+            rgba(20, 16, 24, 0.97)
+        );
+    box-shadow: 0 20px 55px rgba(0, 0, 0, 0.28);
+}
+
+.command-permission-hero h2 {
+    margin: 8px 0;
+    font-size: clamp(28px, 4vw, 42px);
+}
+
+.command-permission-hero p {
+    max-width: 700px;
+    margin: 0;
+    opacity: 0.72;
+    line-height: 1.65;
+}
+
+.permission-badge {
+    display: inline-block;
+    padding: 6px 11px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.09);
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 1.2px;
+}
+
+.permission-key {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.key-item {
+    padding: 7px 11px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.everyone-key {
+    background: rgba(55, 214, 122, 0.15);
+    color: #8ff2b4;
+}
+
+.staff-key {
+    background: rgba(88, 101, 242, 0.17);
+    color: #b5bbff;
+}
+
+.disabled-key {
+    background: rgba(216, 63, 63, 0.17);
+    color: #ff9c9c;
+}
+
+.command-permission-section {
+    margin-bottom: 24px;
+    padding: 25px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-top: 3px solid #3c96d6;
+    border-radius: 20px;
+    background: rgba(18, 18, 24, 0.92);
+    box-shadow: 0 18px 45px rgba(0, 0, 0, 0.2);
+}
+
+.command-permission-section.admin-section {
+    border-top-color: #cf4343;
+}
+
+.section-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    margin-bottom: 22px;
+}
+
+.section-heading h2 {
+    margin: 3px 0;
+}
+
+.section-heading p {
+    margin: 0;
+    opacity: 0.62;
+}
+
+.section-label {
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 1.3px;
+    color: #e57c7c;
+}
+
+.command-count {
+    min-width: 42px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    text-align: center;
+    font-weight: 900;
+}
+
+.permission-grid {
+    display: grid;
+    grid-template-columns: repeat(
+        auto-fill,
+        minmax(270px, 1fr)
+    );
+    gap: 16px;
+}
+
+.permission-card {
+    display: flex;
+    min-height: 230px;
+    flex-direction: column;
+    padding: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 15px;
+    background: rgba(255, 255, 255, 0.035);
+}
+
+.permission-card:hover {
+    border-color: rgba(70, 154, 218, 0.45);
+}
+
+.protected-card:hover {
+    border-color: rgba(207, 67, 67, 0.5);
+}
+
+.permission-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+}
+
+.command-icon {
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 11px;
+    background: rgba(57, 150, 216, 0.16);
+    color: #9ed6ff;
+    font-size: 19px;
+    font-weight: 900;
+}
+
+.protected-icon {
+    background: rgba(207, 67, 67, 0.16);
+}
+
+.command-type,
+.protected-label {
+    padding: 5px 9px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.command-type {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.protected-label {
+    background: rgba(207, 67, 67, 0.16);
+    color: #ff9c9c;
+}
+
+.command-name {
+    display: block;
+    margin-bottom: 9px;
+    color: #ffb0a6;
+    font-size: 18px;
+    font-weight: 900;
+}
+
+.command-description {
+    flex: 1;
+    margin: 0 0 16px;
+    opacity: 0.68;
+    line-height: 1.5;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.form-group label {
+    font-weight: 800;
+}
+
+.form-group select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 12px 13px;
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-radius: 10px;
+    background: #1b1118;
+    color: white;
+    outline: none;
+    color-scheme: dark;
+}
+
+.form-group select option {
+    background: #1b1118;
+    color: white;
+}
+
+.form-group select:focus {
+    border-color: rgba(220, 70, 70, 0.9);
+    box-shadow: 0 0 0 3px rgba(220, 70, 70, 0.13);
+}
+
+.form-group small {
+    opacity: 0.55;
+    line-height: 1.4;
+}
+
+.empty-state {
+    grid-column: 1 / -1;
+    padding: 40px 20px;
+    text-align: center;
+    opacity: 0.68;
+}
+
+.empty-state > span {
+    font-size: 38px;
+}
+
+.empty-state h3 {
+    margin: 10px 0 5px;
+}
+
+.empty-state p {
+    margin: 0;
+}
+
+.save-bar {
+    position: sticky;
+    bottom: 16px;
+    z-index: 20;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 22px;
+    padding: 18px 21px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 16px;
+    background: rgba(19, 15, 19, 0.96);
+    box-shadow: 0 20px 55px rgba(0, 0, 0, 0.48);
+    backdrop-filter: blur(14px);
+}
+
+.save-bar div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.save-bar span {
+    opacity: 0.62;
+}
+
+.save-button {
+    border: 0;
+    border-radius: 11px;
+    padding: 13px 18px;
+    background: linear-gradient(135deg, #b52f2f, #741515);
+    color: white;
+    font-weight: 900;
+    cursor: pointer;
+}
+
+.flash-message {
+    margin-bottom: 16px;
+    padding: 14px 17px;
+    border-radius: 12px;
+}
+
+.flash-message.success {
+    background: rgba(46, 190, 105, 0.16);
+    border: 1px solid rgba(46, 190, 105, 0.4);
+}
+
+@media (max-width: 850px) {
+    .command-permission-hero,
+    .section-heading,
+    .save-bar {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .save-button {
+        width: 100%;
+    }
+}
+</style>
+{% endblock %}

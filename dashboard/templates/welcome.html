@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Welcome | Pirates Bot{% endblock %}
+{% block page_name %}Welcome{% endblock %}
+{% block eyebrow %}CREW ARRIVALS{% endblock %}
+{% block heading %}Welcome System{% endblock %}
+{% block description %}Create a memorable greeting for every new crew member joining your server.{% endblock %}
+{% block content %}
+<form method="POST" class="settings-form" data-live-preview="welcome">
+<div class="editor-grid">
+    <div class="stack">
+        <section class="panel">
+            <div class="panel-heading"><div><span class="panel-icon">👋</span><h2>Welcome Message</h2></div><label class="switch"><input type="checkbox" name="enabled" {% if welcome.enabled %}checked{% endif %}><span></span></label></div>
+
+            <div class="form-group">
+                <label>Welcome channel</label>
+                <p class="help">Choose where the public welcome message is sent.</p>
+                <input type="text" name="channel" value="{{ welcome.channel }}" placeholder="Choose a Discord channel">
+            </div>
+
+            <div class="form-group">
+                <label>Message</label>
+                <p class="help">Use <code>{user}</code> and <code>{server}</code> as placeholders.</p>
+                <textarea name="message" data-preview-source="message">{{ welcome.message }}</textarea>
+            </div>
+
+            <div class="form-group">
+                <label>Avatar or image URL</label>
+                <input type="url" name="image_url" value="{{ welcome.image_url }}" placeholder="https://...">
+            </div>
+
+            <div class="form-group">
+                <label>Banner URL</label>
+                <input type="url" name="banner_url" value="{{ welcome.banner_url }}" placeholder="https://...">
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-heading"><div><span class="panel-icon">🔗</span><h2>Welcome Button</h2></div><label class="switch"><input type="checkbox" name="button_enabled" {% if welcome.button.enabled %}checked{% endif %}><span></span></label></div>
+            <div class="form-row">
+                <div class="form-group"><label>Button text</label><input type="text" name="button_text" value="{{ welcome.button.text }}"></div>
+                <div class="form-group"><label>Button URL</label><input type="url" name="button_url" value="{{ welcome.button.url }}"></div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-heading"><div><span class="panel-icon">✉️</span><h2>Direct Message</h2></div><label class="switch"><input type="checkbox" name="dm_enabled" {% if welcome.dm.enabled %}checked{% endif %}><span></span></label></div>
+            <div class="form-group"><label>DM message</label><textarea name="dm_message">{{ welcome.dm.message }}</textarea></div>
+        </section>
+    </div>
+
+    <aside class="preview-card sticky">
+        <div class="preview-label">LIVE DISCORD PREVIEW</div>
+        <div class="discord-message">
+            <div class="discord-avatar">☠️</div>
+            <div class="discord-body">
+                <div><strong>Pirates Bot</strong> <span class="bot-tag">BOT</span> <small>Today at 12:00</small></div>
+                <div class="discord-embed">
+                    <div class="discord-embed-content" data-preview-target="message">{{ welcome.message or "Ahoy @NewMember, welcome aboard!" }}</div>
+                    {% if welcome.banner_url %}<img src="{{ welcome.banner_url }}" alt="Welcome banner">{% endif %}
+                </div>
+            </div>
+        </div>
+    </aside>
+</div>
+<div class="save-bar"><span>Changes publish to Discord when saved.</span><button class="primary-button" type="submit">Save and Publish</button></div>
+</form>
+{% endblock %}

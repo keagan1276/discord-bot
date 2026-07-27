@@ -4,7 +4,7 @@
         "bank": 0
     },
     "1109630095234179163": {
-        "wallet": 4306,
+        "wallet": 4495,
         "bank": 1800,
         "last_daily": "2026-01-06T14:51:58.354066"
     },
@@ -24,7 +24,12 @@
         "last_daily": null
     },
     "1528707648344686692": {
-        "wallet": 500,
+        "wallet": 0,
+        "bank": 0,
+        "last_daily": null
+    },
+    "1305604637197598781": {
+        "wallet": 547,
         "bank": 0,
         "last_daily": null
     }

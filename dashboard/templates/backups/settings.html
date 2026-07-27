@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+<title>Pirates Bot Dashboard Settings</title>
+
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+</head>
+
+
+<body>
+
+
+<div class="main">
+
+<h2>🔥 Dashboard</h2>
+
+<p class="subtitle">
+Customize your dashboard.
+</p>
+
+
+<form method="POST">
+
+
+<div class="settings-card">
+
+<h3>🏴‍☠️ Bot Information</h3>
+
+
+<label>Bot Name</label>
+
+<input 
+name="bot_name"
+value="{{ dashboard.bot_name }}">
+
+
+<br><br>
+
+
+<label>Logo Emoji</label>
+
+<input 
+name="logo"
+value="{{ dashboard.logo }}">
+
+
+<br><br>
+
+
+<label>Owner</label>
+
+<input 
+name="owner"
+value="{{ dashboard.owner }}">
+
+
+</div>
+
+
+
+<div class="settings-card">
+
+<h3>📊 Dashboard Display</h3>
+
+
+<label>Title</label>
+
+<input 
+name="title"
+value="{{ dashboard.title }}">
+
+
+<br><br>
+
+
+<label>Subtitle</label>
+
+<textarea name="subtitle">{{ dashboard.subtitle }}</textarea>
+
+
+<br><br>
+
+
+<label>Status</label>
+
+<input 
+name="status"
+value="{{ dashboard.status }}">
+
+
+<br><br>
+
+
+<label>Servers Text</label>
+
+<input 
+name="servers"
+value="{{ dashboard.servers }}">
+
+
+<br><br>
+
+
+<label>Commands Text</label>
+
+<input 
+name="commands"
+value="{{ dashboard.commands }}">
+
+
+</div>
+
+
+
+<button class="save-button" type="submit">
+🔥 Save Dashboard Settings
+</button>
+
+
+</form>
+
+
+<br>
+
+
+<a href="/" class="back-button">
+⬅ Back to Dashboard
+</a>
+
+
+</div>
+
+
+</body>
+
+</html>

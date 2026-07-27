@@ -1,0 +1,854 @@
+{% extends "base.html" %}
+
+{% block title %}Moderation | Pirates Bot{% endblock %}
+
+{% block content %}
+
+<div class="moderation-page">
+
+```
+<section class="moderation-hero">
+    <div>
+        <span class="moderation-badge">
+            🛡️ SERVER-SPECIFIC MODERATION
+        </span>
+
+        <h1>Moderation Settings</h1>
+
+        <p>
+            These settings apply only to the Discord server currently
+            selected in the dashboard.
+        </p>
+    </div>
+
+    <div class="moderation-status">
+        <span
+            class="status-dot {% if moderation.enabled %}online{% endif %}"
+        ></span>
+
+        {% if moderation.enabled %}
+            Moderation enabled
+        {% else %}
+            Moderation disabled
+        {% endif %}
+    </div>
+</section>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        <div class="flash-area">
+            {% for category, message in messages %}
+                <div class="flash-message {{ category }}">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+{% endwith %}
+
+<form method="POST">
+
+    <section class="moderation-card">
+        <div class="card-heading">
+            <div>
+                <h2>⚙️ General Moderation</h2>
+
+                <p>
+                    Enable moderation and choose where moderation activity
+                    should be logged.
+                </p>
+            </div>
+
+            <label class="toggle-row">
+                <input
+                    type="checkbox"
+                    name="enabled"
+                    {% if moderation.enabled %}checked{% endif %}
+                >
+
+                <span>Moderation enabled</span>
+            </label>
+        </div>
+
+        <div class="form-group">
+            <label for="log_channel">
+                Moderation log channel
+            </label>
+
+            <select
+                id="log_channel"
+                name="log_channel"
+                data-discord-select="channel"
+                data-selected="{{ moderation.log_channel }}"
+            >
+                <option value="">
+                    Select a log channel
+                </option>
+
+                {% if moderation.log_channel %}
+                    <option
+                        value="{{ moderation.log_channel }}"
+                        selected
+                    >
+                        Current log channel
+                    </option>
+                {% endif %}
+            </select>
+
+            <small>
+                Automatic moderation actions and warning information can be
+                sent to this channel.
+            </small>
+        </div>
+    </section>
+
+    <section class="moderation-card">
+        <div class="card-heading">
+            <div>
+                <h2>🤖 Automatic Moderation</h2>
+
+                <p>
+                    Control spam, Discord invites and custom blocked words
+                    for this server.
+                </p>
+            </div>
+
+            <label class="toggle-row">
+                <input
+                    type="checkbox"
+                    name="automod"
+                    {% if moderation.automod.enabled %}checked{% endif %}
+                >
+
+                <span>Automod enabled</span>
+            </label>
+        </div>
+
+        <div class="setting-grid">
+
+            <label class="setting-card">
+                <input
+                    type="checkbox"
+                    name="anti_spam"
+                    {% if moderation.automod.anti_spam %}checked{% endif %}
+                >
+
+                <div>
+                    <strong>🚨 Anti-spam</strong>
+
+                    <span>
+                        Detect and remove excessive or unusually long
+                        messages.
+                    </span>
+                </div>
+            </label>
+
+            <label class="setting-card">
+                <input
+                    type="checkbox"
+                    name="anti_discord_links"
+                    {% if moderation.automod.anti_discord_links %}checked{% endif %}
+                >
+
+                <div>
+                    <strong>🔗 Block Discord invites</strong>
+
+                    <span>
+                        Blocks Discord invite links without blocking normal
+                        websites such as YouTube or Google.
+                    </span>
+                </div>
+            </label>
+
+            <label class="setting-card">
+                <input
+                    type="checkbox"
+                    name="word_filter"
+                    {% if moderation.automod.word_filter %}checked{% endif %}
+                >
+
+                <div>
+                    <strong>📝 Custom word filter</strong>
+
+                    <span>
+                        Delete messages containing words or phrases from
+                        your server’s blocked list.
+                    </span>
+                </div>
+            </label>
+
+        </div>
+
+        <div class="filter-layout">
+
+            <div class="form-group filter-box">
+                <div class="filter-heading">
+                    <div>
+                        <label for="banned_words">
+                            🚫 Banned words and phrases
+                        </label>
+
+                        <p>
+                            Messages containing these entries will be
+                            removed.
+                        </p>
+                    </div>
+
+                    <span class="filter-label danger-label">
+                        Block list
+                    </span>
+                </div>
+
+                <textarea
+                    id="banned_words"
+                    name="banned_words"
+                    rows="10"
+                    placeholder="bad word&#10;another phrase&#10;third blocked word"
+                >{{ banned_words_text }}</textarea>
+
+                <small>
+                    Enter one word or phrase per line. Commas also work.
+                    Matching is not case-sensitive.
+                </small>
+            </div>
+
+            <div class="form-group filter-box allowed-box">
+                <div class="filter-heading">
+                    <div>
+                        <label for="allowed_discord_invites">
+                            ✅ Allowed Discord invites
+                        </label>
+
+                        <p>
+                            These Discord invites will not be deleted.
+                        </p>
+                    </div>
+
+                    <span class="filter-label allowed-label">
+                        Allow list
+                    </span>
+                </div>
+
+                <textarea
+                    id="allowed_discord_invites"
+                    name="allowed_discord_invites"
+                    rows="10"
+                    placeholder="discord.gg/myserver&#10;discord.gg/partnerserver&#10;discord.com/invite/example"
+                >{{ allowed_invites_text }}</textarea>
+
+                <small>
+                    Enter one Discord invite per line. You may include
+                    discord.gg, discord.com/invite or discordapp.com/invite
+                    links.
+                </small>
+            </div>
+
+        </div>
+
+        <div class="invite-explanation">
+            <div class="invite-example allowed-example">
+                <span>✅</span>
+
+                <div>
+                    <strong>Allowed invite</strong>
+
+                    <code>discord.gg/myserver</code>
+
+                    <p>
+                        This remains visible when it appears in a message.
+                    </p>
+                </div>
+            </div>
+
+            <div class="invite-example blocked-example">
+                <span>❌</span>
+
+                <div>
+                    <strong>Unknown invite</strong>
+
+                    <code>discord.gg/randomserver</code>
+
+                    <p>
+                        This is deleted when Discord invite blocking is
+                        enabled.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="moderation-card">
+        <div class="card-heading">
+            <div>
+                <h2>⚠️ Warning Settings</h2>
+
+                <p>
+                    Choose whether warnings are enabled and how many warnings
+                    are allowed.
+                </p>
+            </div>
+        </div>
+
+        <div class="setting-grid">
+
+            <label class="setting-card">
+                <input
+                    type="checkbox"
+                    name="warnings"
+                    {% if moderation.warnings.enabled %}checked{% endif %}
+                >
+
+                <div>
+                    <strong>Enable warnings</strong>
+
+                    <span>
+                        Allow moderators and automatic moderation to issue
+                        warnings.
+                    </span>
+                </div>
+            </label>
+
+            <div class="form-group">
+                <label for="max_warnings">
+                    Maximum warnings
+                </label>
+
+                <input
+                    id="max_warnings"
+                    type="number"
+                    name="max_warnings"
+                    min="1"
+                    max="100"
+                    value="{{ moderation.warnings.max_warnings }}"
+                >
+
+                <small>
+                    Maximum number of warnings before staff take further
+                    action.
+                </small>
+            </div>
+
+        </div>
+    </section>
+
+    <section class="moderation-card">
+        <div class="card-heading">
+            <div>
+                <h2>⚔️ Punishment Settings</h2>
+
+                <p>
+                    Choose which moderation punishments can be used in this
+                    server.
+                </p>
+            </div>
+        </div>
+
+        <div class="setting-grid">
+
+            <label class="setting-card">
+                <input
+                    type="checkbox"
+                    name="kick"
+                    {% if moderation.kick.enabled %}checked{% endif %}
+                >
+
+                <div>
+                    <strong>Kick enabled</strong>
+
+                    <span>
+                        Allow members to be removed from the server.
+                    </span>
+                </div>
+            </label>
+
+            <label class="setting-card">
+                <input
+                    type="checkbox"
+                    name="ban"
+                    {% if moderation.ban.enabled %}checked{% endif %}
+                >
+
+                <div>
+                    <strong>Ban enabled</strong>
+
+                    <span>
+                        Allow members to be permanently banned.
+                    </span>
+                </div>
+            </label>
+
+            <label class="setting-card">
+                <input
+                    type="checkbox"
+                    name="mute"
+                    {% if moderation.mute.enabled %}checked{% endif %}
+                >
+
+                <div>
+                    <strong>Mute enabled</strong>
+
+                    <span>
+                        Allow members to be timed out or muted.
+                    </span>
+                </div>
+            </label>
+
+            <div class="form-group">
+                <label for="mute_duration">
+                    Default mute duration
+                </label>
+
+                <div class="input-suffix">
+                    <input
+                        id="mute_duration"
+                        type="number"
+                        name="mute_duration"
+                        min="1"
+                        value="{{ moderation.mute.duration }}"
+                    >
+
+                    <span>minutes</span>
+                </div>
+            </div>
+
+        </div>
+    </section>
+
+    <div class="save-bar">
+        <div>
+            <strong>Save this server’s settings</strong>
+
+            <span>
+                Other Discord servers keep their own separate moderation
+                configuration.
+            </span>
+        </div>
+
+        <button
+            type="submit"
+            class="save-button"
+        >
+            💾 Save Moderation Settings
+        </button>
+    </div>
+
+</form>
+```
+
+</div>
+
+<style>
+.moderation-page {
+    max-width: 1300px;
+    margin: 0 auto;
+    padding: 10px 0 80px;
+}
+
+.moderation-hero {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 28px;
+    margin-bottom: 24px;
+    padding: 34px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 22px;
+    background:
+        radial-gradient(
+            circle at top right,
+            rgba(180, 40, 40, 0.3),
+            transparent 38%
+        ),
+        linear-gradient(
+            135deg,
+            rgba(104, 18, 18, 0.96),
+            rgba(20, 16, 24, 0.97)
+        );
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
+}
+
+.moderation-hero h1 {
+    margin: 8px 0;
+    font-size: clamp(34px, 5vw, 54px);
+}
+
+.moderation-hero p {
+    max-width: 740px;
+    margin: 0;
+    opacity: 0.75;
+    line-height: 1.7;
+}
+
+.moderation-badge {
+    display: inline-block;
+    padding: 7px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.09);
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 1.3px;
+}
+
+.moderation-status {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    white-space: nowrap;
+    padding: 11px 15px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.24);
+}
+
+.status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #777;
+}
+
+.status-dot.online {
+    background: #37d67a;
+    box-shadow: 0 0 15px rgba(55, 214, 122, 0.8);
+}
+
+.moderation-card {
+    margin-bottom: 22px;
+    padding: 26px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 20px;
+    background: rgba(18, 18, 24, 0.92);
+    box-shadow: 0 18px 45px rgba(0, 0, 0, 0.22);
+}
+
+.card-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    margin-bottom: 24px;
+}
+
+.card-heading h2 {
+    margin: 0 0 5px;
+}
+
+.card-heading p {
+    margin: 0;
+    opacity: 0.65;
+}
+
+.toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    font-weight: 800;
+}
+
+.toggle-row input,
+.setting-card input {
+    width: 19px;
+    height: 19px;
+    flex-shrink: 0;
+}
+
+.setting-grid {
+    display: grid;
+    grid-template-columns: repeat(
+        auto-fit,
+        minmax(250px, 1fr)
+    );
+    gap: 16px;
+}
+
+.setting-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 13px;
+    padding: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.035);
+    cursor: pointer;
+    transition:
+        border-color 0.18s ease,
+        background 0.18s ease,
+        transform 0.18s ease;
+}
+
+.setting-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(202, 74, 74, 0.48);
+    background: rgba(255, 255, 255, 0.052);
+}
+
+.setting-card div {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.setting-card span {
+    opacity: 0.62;
+    line-height: 1.5;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.form-group label {
+    font-weight: 800;
+}
+
+.form-group small {
+    opacity: 0.58;
+    line-height: 1.5;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 13px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-radius: 11px;
+    background: #1b1118;
+    color: #fff;
+    outline: none;
+    color-scheme: dark;
+}
+
+.form-group textarea {
+    resize: vertical;
+}
+
+.form-group select option {
+    background: #1b1118;
+    color: #fff;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+    border-color: rgba(220, 70, 70, 0.9);
+    box-shadow: 0 0 0 3px rgba(220, 70, 70, 0.13);
+}
+
+.form-group input::placeholder,
+.form-group textarea::placeholder {
+    color: rgba(255, 255, 255, 0.42);
+}
+
+.filter-layout {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+    margin-top: 22px;
+}
+
+.filter-box {
+    padding: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 15px;
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.allowed-box {
+    border-color: rgba(55, 214, 122, 0.18);
+    background: rgba(55, 214, 122, 0.025);
+}
+
+.filter-box textarea {
+    min-height: 220px;
+}
+
+.filter-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 14px;
+    margin-bottom: 3px;
+}
+
+.filter-heading p {
+    margin: 5px 0 0;
+    opacity: 0.56;
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.filter-label {
+    flex-shrink: 0;
+    padding: 5px 9px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+}
+
+.danger-label {
+    color: #ff9d9d;
+    background: rgba(216, 63, 63, 0.16);
+}
+
+.allowed-label {
+    color: #8ff2b4;
+    background: rgba(55, 214, 122, 0.14);
+}
+
+.invite-explanation {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    margin-top: 18px;
+}
+
+.invite-example {
+    display: flex;
+    gap: 13px;
+    align-items: flex-start;
+    padding: 16px;
+    border-radius: 13px;
+}
+
+.invite-example > span {
+    font-size: 20px;
+}
+
+.invite-example div {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.invite-example code {
+    width: fit-content;
+    padding: 4px 8px;
+    border-radius: 7px;
+    background: rgba(0, 0, 0, 0.26);
+    color: #fff;
+}
+
+.invite-example p {
+    margin: 0;
+    opacity: 0.58;
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.allowed-example {
+    border: 1px solid rgba(55, 214, 122, 0.2);
+    background: rgba(55, 214, 122, 0.055);
+}
+
+.blocked-example {
+    border: 1px solid rgba(220, 70, 70, 0.2);
+    background: rgba(220, 70, 70, 0.055);
+}
+
+.input-suffix {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 10px;
+}
+
+.input-suffix span {
+    opacity: 0.65;
+}
+
+.save-bar {
+    position: sticky;
+    bottom: 16px;
+    z-index: 20;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 22px;
+    padding: 18px 21px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 16px;
+    background: rgba(19, 15, 19, 0.96);
+    box-shadow: 0 20px 55px rgba(0, 0, 0, 0.48);
+    backdrop-filter: blur(14px);
+}
+
+.save-bar div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.save-bar span {
+    opacity: 0.62;
+}
+
+.save-button {
+    border: 0;
+    border-radius: 11px;
+    padding: 13px 18px;
+    background: linear-gradient(135deg, #b52f2f, #741515);
+    color: white;
+    font-weight: 900;
+    cursor: pointer;
+    transition:
+        transform 0.18s ease,
+        box-shadow 0.18s ease;
+}
+
+.save-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px rgba(151, 35, 35, 0.32);
+}
+
+.flash-message {
+    margin-bottom: 16px;
+    padding: 14px 17px;
+    border-radius: 12px;
+}
+
+.flash-message.success {
+    background: rgba(46, 190, 105, 0.16);
+    border: 1px solid rgba(46, 190, 105, 0.4);
+}
+
+.flash-message.warning {
+    background: rgba(235, 165, 52, 0.15);
+    border: 1px solid rgba(235, 165, 52, 0.4);
+}
+
+@media (max-width: 900px) {
+    .filter-layout,
+    .invite-explanation {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 850px) {
+    .moderation-hero,
+    .card-heading,
+    .save-bar {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .moderation-status {
+        white-space: normal;
+    }
+
+    .save-button {
+        width: 100%;
+    }
+
+    .filter-heading {
+        flex-direction: column;
+    }
+}
+</style>
+
+{% endblock %}

@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+<title>Pirates Bot Economy</title>
+
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+</head>
+
+
+<body>
+
+
+<div class="main">
+
+<h2>💰 Pirates Bot Economy Settings</h2>
+
+<p class="subtitle">
+Control your server economy values.
+</p>
+
+
+<form method="POST">
+
+
+<!-- WORK -->
+
+<div class="card">
+
+<h3>⚒ Work</h3>
+
+
+<label>Minimum Reward</label>
+
+<input 
+name="work_min" 
+value="{{ economy.work.min_reward }}">
+
+
+<br><br>
+
+
+<label>Maximum Reward</label>
+
+<input 
+name="work_max" 
+value="{{ economy.work.max_reward }}">
+
+
+<br><br>
+
+
+<label>Cooldown (seconds)</label>
+
+<input 
+name="work_cooldown" 
+value="{{ economy.work.cooldown }}">
+
+
+</div>
+
+
+
+
+<!-- CRIME -->
+
+<div class="card">
+
+<h3>☠ Crime</h3>
+
+
+<label>Success Chance (%)</label>
+
+<input 
+name="crime_chance" 
+value="{{ economy.crime.success_chance }}">
+
+
+<br><br>
+
+
+<label>Minimum Reward</label>
+
+<input 
+name="crime_min" 
+value="{{ economy.crime.min_reward }}">
+
+
+<br><br>
+
+
+<label>Maximum Reward</label>
+
+<input 
+name="crime_max" 
+value="{{ economy.crime.max_reward }}">
+
+
+<br><br>
+
+
+<label>Fail Loss</label>
+
+<input 
+name="crime_loss" 
+value="{{ economy.crime.fail_loss }}">
+
+
+<br><br>
+
+
+<label>Cooldown (seconds)</label>
+
+<input 
+name="crime_cooldown" 
+value="{{ economy.crime.cooldown }}">
+
+
+</div>
+
+
+
+
+<!-- ROB -->
+
+<div class="card">
+
+<h3>🏴‍☠️ Rob</h3>
+
+
+<label>Success Chance (%)</label>
+
+<input 
+name="rob_chance" 
+value="{{ economy.rob.success_chance }}">
+
+
+<br><br>
+
+
+<label>Minimum Reward</label>
+
+<input 
+name="rob_min" 
+value="{{ economy.rob.min_reward }}">
+
+
+<br><br>
+
+
+<label>Maximum Reward</label>
+
+<input 
+name="rob_max" 
+value="{{ economy.rob.max_reward }}">
+
+
+<br><br>
+
+
+<label>Fail Loss</label>
+
+<input 
+name="rob_loss" 
+value="{{ economy.rob.fail_loss }}">
+
+
+<br><br>
+
+
+<label>Cooldown (seconds)</label>
+
+<input 
+name="rob_cooldown" 
+value="{{ economy.rob.cooldown }}">
+
+
+</div>
+
+
+
+
+
+<!-- BLACKJACK -->
+
+<div class="card">
+
+<h3>🃏 Blackjack Settings</h3>
+
+
+<label>Minimum Bet</label>
+
+<input 
+name="blackjack_min" 
+value="{{ economy.blackjack.min_bet }}">
+
+
+<br><br>
+
+
+<label>Maximum Bet</label>
+
+<input 
+name="blackjack_max" 
+value="{{ economy.blackjack.max_bet }}">
+
+
+<br><br>
+
+
+<label>Cooldown (seconds)</label>
+
+<input 
+name="blackjack_cooldown" 
+value="{{ economy.blackjack.cooldown }}">
+
+
+</div>
+
+
+
+
+
+<!-- ROULETTE -->
+
+<div class="card">
+
+<h3>🎡 Roulette Settings</h3>
+
+
+<label>Minimum Bet</label>
+
+<input 
+name="roulette_min" 
+value="{{ economy.roulette.min_bet }}">
+
+
+<br><br>
+
+
+<label>Maximum Bet</label>
+
+<input 
+name="roulette_max" 
+value="{{ economy.roulette.max_bet }}">
+
+
+<br><br>
+
+
+<label>Cooldown (seconds)</label>
+
+<input 
+name="roulette_cooldown" 
+value="{{ economy.roulette.cooldown }}">
+
+
+</div>
+
+
+
+
+
+<button type="submit">
+🔥 Save Economy Settings
+</button>
+</form>
+
+<br><br>
+
+<a href="/" class="back-button">
+⬅ Back to Dashboard
+</a>
+
+
+
+</div>
+<script src="{{ url_for('static', filename='js/discord-selectors.js') }}"></script>
+
+</body>
+
+</html>

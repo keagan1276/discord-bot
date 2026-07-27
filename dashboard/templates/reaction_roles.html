@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Reaction Roles | Pirates Bot{% endblock %}
+{% block page_name %}Reaction Roles{% endblock %}
+{% block eyebrow %}CREW ASSIGNMENTS{% endblock %}
+{% block heading %}Reaction Roles{% endblock %}
+{% block description %}Let members assign themselves roles by reacting to a message.{% endblock %}
+{% block content %}
+<form method="POST" class="settings-form">
+<div class="editor-grid">
+    <div class="stack">
+        <section class="panel">
+            <div class="panel-heading"><div><span class="panel-icon">🙂</span><h2>Reaction Role Message</h2></div><label class="switch"><input type="checkbox" name="enabled" {% if roles.enabled %}checked{% endif %}><span></span></label></div>
+            <div class="form-group"><label>Channel</label><input name="channel_id" value="{{ roles.channel_id }}" placeholder="Choose a channel"></div>
+            <div class="form-group"><label>Existing message ID</label><input name="message_id" value="{{ roles.message_id }}" placeholder="Leave blank to create one"></div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-heading"><div><span class="panel-icon">➕</span><h2>Add Role Mapping</h2></div></div>
+            <div class="form-row">
+                <div class="form-group"><label>Emoji</label><input name="emoji" placeholder="🏴‍☠️"></div>
+                <div class="form-group"><label>Discord role</label><input name="role_id" placeholder="Choose a role"></div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-heading"><div><span class="panel-icon">🎭</span><h2>Configured Roles</h2></div><span class="pill">{{ roles.roles|length }}</span></div>
+            <div class="mapping-list">
+                {% for item in roles.roles %}
+                <div class="mapping-row"><span class="mapping-emoji">{{ item.emoji }}</span><div><strong>Role {{ item.role_id }}</strong><small>Reaction mapping</small></div></div>
+                {% else %}
+                <div class="empty-state"><span>🙂</span><h3>No roles configured</h3><p>Add your first emoji and role mapping above.</p></div>
+                {% endfor %}
+            </div>
+        </section>
+    </div>
+
+    <aside class="preview-card sticky">
+        <div class="preview-label">REACTION MESSAGE PREVIEW</div>
+        <div class="discord-message">
+            <div class="discord-avatar">☠️</div>
+            <div class="discord-body">
+                <div><strong>Pirates Bot</strong> <span class="bot-tag">BOT</span></div>
+                <p>React below to receive a role:</p>
+                {% for item in roles.roles %}<div class="reaction-chip">{{ item.emoji }} <span>1</span></div>{% endfor %}
+            </div>
+        </div>
+    </aside>
+</div>
+<div class="save-bar"><span>Saving updates the live reaction-role message.</span><button class="primary-button" type="submit">Save and Publish</button></div>
+</form>
+{% endblock %}

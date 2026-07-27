@@ -1,0 +1,41 @@
+{
+    "menu": {
+        "title": "🏴‍☠️ Pirates Server Rules",
+        "description": "Welcome aboard!",
+        "channel_id": "1269838248109408287",
+        "color": "991111",
+        "footer": "",
+        "image_url": "https://plain-weur-prod-public.komododecks.com/202607/23/lj6uWGeju7Y9KRLxRLoA/image.png",
+        "thumbnail_url": "",
+        "message_id": "1530358536847229012"
+    },
+    "sections": {
+        "general": {
+            "button_label": "General Rules",
+            "button_emoji": "📜",
+            "title": "📜 General Rules",
+            "description": "1. Be respectful\r\n2. No spam",
+            "color": "991111",
+            "image_url": "https://plain-weur-prod-public.komododecks.com/202607/23/lj6uWGeju7Y9KRLxRLoA/image.png",
+            "thumbnail_url": ""
+        },
+        "raiding": {
+            "button_label": "New Rules",
+            "button_emoji": "📜",
+            "title": "📜 New Rules",
+            "description": "Add your rules here.",
+            "color": "991111",
+            "image_url": "https://plain-weur-prod-public.komododecks.com/202607/23/lj6uWGeju7Y9KRLxRLoA/image.png",
+            "thumbnail_url": ""
+        },
+        "trader": {
+            "button_label": "New Rules",
+            "button_emoji": "📜",
+            "title": "📜 New Rules",
+            "description": "Add your rules here.",
+            "color": "991111",
+            "image_url": "https://plain-weur-prod-public.komododecks.com/202607/23/lj6uWGeju7Y9KRLxRLoA/image.png",
+            "thumbnail_url": ""
+        }
+    }
+}

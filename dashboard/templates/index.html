@@ -1,0 +1,509 @@
+{% extends "base.html" %}
+
+{% block title %}
+Pirates Bot Dashboard
+{% endblock %}
+
+{% block page_name %}
+Dashboard
+{% endblock %}
+
+{% block eyebrow %}
+PIRATES BOT
+{% endblock %}
+
+{% block heading %}
+Welcome back, Captain!
+{% endblock %}
+
+{% block description %}
+Here is what is happening on your ship today.
+{% endblock %}
+
+{% block head %}
+
+<link
+    rel="stylesheet"
+    href="{{ url_for('static', filename='css/dashboard-home.css') }}"
+>
+
+<style>
+    /*
+     * The sidebar is supplied by base.html.
+     * Do not create another sidebar on this page.
+     */
+
+    .dashboard-shell {
+        min-height: auto;
+        margin-left: 0;
+    }
+
+    .dashboard-content {
+        padding: 0;
+    }
+
+    .hero-banner {
+        position: relative;
+
+        height: 290px;
+
+        margin-bottom: 24px;
+
+        overflow: hidden;
+
+        border:
+            1px solid rgba(218, 159, 50, 0.14);
+
+        border-radius: 14px;
+
+        background: #120706;
+    }
+
+    .hero-banner > img {
+        width: 100%;
+        height: 100%;
+
+        object-fit: cover;
+        object-position: center;
+
+        filter:
+            contrast(1.08)
+            saturate(0.96)
+            brightness(0.72);
+    }
+
+    .hero-shade {
+        position: absolute;
+
+        inset: 0;
+
+        background:
+            linear-gradient(
+                90deg,
+                rgba(0, 0, 0, 0.32),
+                transparent 25%,
+                transparent 76%,
+                rgba(0, 0, 0, 0.4)
+            ),
+            linear-gradient(
+                180deg,
+                rgba(0, 0, 0, 0.08),
+                transparent 56%,
+                rgba(5, 7, 8, 0.86)
+            );
+    }
+
+    @media (max-width: 800px) {
+        .dashboard-shell {
+            margin-left: 0;
+        }
+
+        .hero-banner {
+            height: 220px;
+        }
+    }
+
+    @media (max-width: 560px) {
+        .hero-banner {
+            height: 170px;
+        }
+    }
+</style>
+
+{% endblock %}
+
+{% block hero_actions %}
+<button
+class="icon-button"
+type="button"
+onclick="window.location.reload()"
+title="Refresh"
+
+>
+
+```
+↻
+```
+
+</button>
+{% endblock %}
+
+{% block content %}
+
+<div class="dashboard-shell">
+
+```
+<section class="hero-banner">
+    <img
+        src="{{ url_for('static', filename='images/pirates-bot-banner.png') }}"
+        alt="Pirates Bot banner"
+    >
+
+    <div class="hero-shade"></div>
+</section>
+
+<section class="dashboard-content">
+
+    <div class="dashboard-grid">
+
+        <div class="main-column">
+
+            <section class="stats-grid">
+
+                <article class="stat-card">
+                    <div class="stat-icon red">
+                        👥
+                    </div>
+
+                    <div>
+                        <span>Servers</span>
+
+                        <strong>
+                            {{ bot_status.servers }}
+                        </strong>
+
+                        <small>
+                            Connected guilds
+                        </small>
+                    </div>
+                </article>
+
+                <article class="stat-card">
+                    <div class="stat-icon gold">
+                        👤
+                    </div>
+
+                    <div>
+                        <span>Members</span>
+
+                        <strong>
+                            {{ "{:,}".format(bot_status.members) }}
+                        </strong>
+
+                        <small>
+                            Across all servers
+                        </small>
+                    </div>
+                </article>
+
+                <article class="stat-card">
+                    <div class="stat-icon blue">
+                        &lt;/&gt;
+                    </div>
+
+                    <div>
+                        <span>Commands</span>
+
+                        <strong>
+                            {{ commands_data.total }}
+                        </strong>
+
+                        <small>
+                            {{ commands_data.prefix_commands|length }}
+                            Prefix ·
+                            {{ commands_data.slash_commands|length }}
+                            Slash
+                        </small>
+                    </div>
+                </article>
+
+                <article class="stat-card">
+                    <div class="stat-icon green">
+                        〽
+                    </div>
+
+                    <div>
+                        <span>Latency</span>
+
+                        <strong>
+                            {{ bot_status.latency_ms }}ms
+                        </strong>
+
+                        <small>
+                            {% if bot_status.latency_ms and bot_status.latency_ms < 100 %}
+                                Excellent
+                            {% else %}
+                                Connected
+                            {% endif %}
+                        </small>
+                    </div>
+                </article>
+
+            </section>
+
+            <section class="lower-grid">
+
+                <article class="panel activity-panel">
+
+                    <div class="panel-title">
+                        <h3>Recent Activity</h3>
+                        <span>Live dashboard</span>
+                    </div>
+
+                    <div class="activity-row">
+                        <span class="activity-icon">
+                            🎉
+                        </span>
+
+                        <div>
+                            <strong>
+                                Welcome system
+                            </strong>
+
+                            <small>
+                                Manage automated greetings and direct messages.
+                            </small>
+                        </div>
+
+                        <a href="/welcome">
+                            Open
+                        </a>
+                    </div>
+
+                    <div class="activity-row">
+                        <span class="activity-icon">
+                            🎫
+                        </span>
+
+                        <div>
+                            <strong>
+                                Ticket system
+                            </strong>
+
+                            <small>
+                                Create and update your support panel.
+                            </small>
+                        </div>
+
+                        <a href="/tickets">
+                            Open
+                        </a>
+                    </div>
+
+                    <div class="activity-row">
+                        <span class="activity-icon">
+                            📜
+                        </span>
+
+                        <div>
+                            <strong>
+                                Rules menu
+                            </strong>
+
+                            <small>
+                                Edit sections, images, buttons and posting channel.
+                            </small>
+                        </div>
+
+                        <a href="/rules">
+                            Open
+                        </a>
+                    </div>
+
+                    <div class="activity-row">
+                        <span class="activity-icon">
+                            🎭
+                        </span>
+
+                        <div>
+                            <strong>
+                                Reaction roles
+                            </strong>
+
+                            <small>
+                                Connect emojis to Discord roles.
+                            </small>
+                        </div>
+
+                        <a href="/reaction-roles">
+                            Open
+                        </a>
+                    </div>
+
+                    <div class="activity-row">
+                        <span class="activity-icon status-dot"></span>
+
+                        <div>
+                            <strong>
+                                Bot status
+                            </strong>
+
+                            <small>
+                                {% if bot_status.online %}
+                                    Pirates Bot is online and connected.
+                                {% else %}
+                                    Pirates Bot is currently offline.
+                                {% endif %}
+                            </small>
+                        </div>
+
+                        <span class="activity-time">
+                            Now
+                        </span>
+                    </div>
+
+                </article>
+
+                <article class="panel feature-panel">
+
+                    <div class="panel-title">
+                        <h3>Feature Status</h3>
+                        <span>Controls</span>
+                    </div>
+
+                    <a
+                        class="feature-row"
+                        href="/welcome"
+                    >
+                        <span>🎉 Welcome</span>
+                        <b>Active</b>
+                    </a>
+
+                    <a
+                        class="feature-row"
+                        href="/tickets"
+                    >
+                        <span>🎫 Tickets</span>
+                        <b>Active</b>
+                    </a>
+
+                    <a
+                        class="feature-row"
+                        href="/rules"
+                    >
+                        <span>📜 Rules Menu</span>
+                        <b>Active</b>
+                    </a>
+
+                    <a
+                        class="feature-row"
+                        href="/reaction-roles"
+                    >
+                        <span>🎭 Reaction Roles</span>
+                        <b>Active</b>
+                    </a>
+
+                    <a
+                        class="feature-row"
+                        href="/moderation"
+                    >
+                        <span>⚖️ Moderation</span>
+                        <b>Active</b>
+                    </a>
+
+                    <a
+                        class="feature-row"
+                        href="/embeds"
+                    >
+                        <span>📝 Embeds</span>
+                        <b>Active</b>
+                    </a>
+
+                    <a
+                        class="feature-row"
+                        href="/economy"
+                    >
+                        <span>💰 Economy</span>
+                        <b>Active</b>
+                    </a>
+
+                    <a
+                        class="feature-row"
+                        href="/jobs"
+                    >
+                        <span>⚓ Pirate Jobs</span>
+                        <b>Active</b>
+                    </a>
+
+                </article>
+
+            </section>
+
+        </div>
+
+        <aside class="right-column">
+
+            <article class="panel bot-card">
+
+                <div class="bot-card-heading">
+
+                    <h3>
+                        <span class="status-light"></span>
+                        Bot Status
+                    </h3>
+
+                    <strong
+                        class="{{ 'online-text' if bot_status.online else 'offline-text' }}"
+                    >
+                        {{ 'Online' if bot_status.online else 'Offline' }}
+                    </strong>
+
+                </div>
+
+                <img
+				src="{{ url_for('static', filename='images/pirates-bot-logo.png') }}"
+				class="bot-avatar"
+				alt="Pirates Bot"
+				>
+
+                <h3>
+                    {{ bot_status.bot_name }}
+                </h3>
+
+                <p>
+                    {% if bot_status.get('bot_id') %}
+                        ID: {{ bot_status.bot_id }}
+                    {% else %}
+                        Waiting for Discord connection
+                    {% endif %}
+                </p>
+
+            </article>
+
+            <article class="panel quick-actions">
+
+                <h3>Quick Actions</h3>
+
+                <a
+                    class="action-button red-action"
+                    href="/commands"
+                >
+                    ⚡ View Commands
+                </a>
+
+                <a
+                    class="action-button gold-action"
+                    href="/rules"
+                >
+                    📜 Edit Rules Menu
+                </a>
+
+                <a
+                    class="action-button dark-action"
+                    href="/settings"
+                >
+                    ⚙️ Bot Settings
+                </a>
+
+            </article>
+
+        </aside>
+
+    </div>
+
+</section>
+```
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+
+<script>
+    window.setTimeout(
+        () => window.location.reload(),
+        30000
+    );
+</script>
+
+{% endblock %}

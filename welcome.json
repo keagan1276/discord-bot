@@ -1,7 +1,18 @@
 {
-    "1257004738340323379": {
-        "channel": 1261885382065262673,
-        "message": "hi",
-        "image": null
-    }
+    "enabled": true,
+    "channel": "1418532734778998806",
+    "message": "Welcome {user} to {server}! 🏴‍☠️",
+    "image_url": "",
+    "banner_url": "",
+    "button": {
+        "enabled": true,
+        "text": "Join The Crew",
+        "url": "https://discord.gg/yourinvite"
+    },
+    "dm": {
+        "enabled": false,
+        "message": "Welcome aboard {user}! 🏴‍☠️"
+    },
+    "guild_id": "1257004738340323379",
+    "preview_message_id": "1530439007400493070"
 }

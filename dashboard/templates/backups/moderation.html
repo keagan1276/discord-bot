@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+<title>Pirates Bot Moderation</title>
+
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+</head>
+
+
+<body>
+
+
+<div class="main">
+
+
+<h2>🛡 Pirates Bot Moderation Settings</h2>
+
+<p class="subtitle">
+Control your server protection and moderation tools.
+</p>
+
+
+
+<form method="POST">
+
+
+
+<div class="card">
+
+<h3>🛡 Moderation System</h3>
+
+
+<label>
+
+<input type="checkbox" name="enabled"
+{% if moderation.enabled %}checked{% endif %}>
+
+Enable Moderation
+
+</label>
+
+
+<br><br>
+
+
+<label>
+Mod Log Channel
+</label>
+
+<input 
+name="log_channel"
+value="{{ moderation.log_channel }}">
+
+
+</div>
+
+
+
+
+
+<div class="card">
+
+<h3>🤖 Auto Moderation</h3>
+
+
+<label>
+
+<input type="checkbox" name="automod"
+{% if moderation.automod.enabled %}checked{% endif %}>
+
+Enable AutoMod
+
+</label>
+
+
+<br><br>
+
+
+<label>
+
+<input type="checkbox" name="anti_spam"
+{% if moderation.automod.anti_spam %}checked{% endif %}>
+
+Anti Spam
+
+</label>
+
+
+<br><br>
+
+
+<label>
+
+<input type="checkbox" name="anti_links"
+{% if moderation.automod.anti_links %}checked{% endif %}>
+
+Anti Links
+
+</label>
+
+
+<br><br>
+
+
+<label>
+
+<input type="checkbox" name="word_filter"
+{% if moderation.automod.word_filter %}checked{% endif %}>
+
+Word Filter
+
+</label>
+
+
+</div>
+
+
+
+
+
+
+<div class="card">
+
+<h3>⚠️ Warning System</h3>
+
+
+<label>
+
+<input type="checkbox" name="warnings"
+{% if moderation.warnings.enabled %}checked{% endif %}>
+
+Enable Warnings
+
+</label>
+
+
+<br><br>
+
+
+<label>
+Maximum Warnings
+</label>
+
+<input
+
+name="max_warnings"
+
+value="{{ moderation.warnings.max_warnings }}">
+
+
+</div>
+
+
+
+
+
+
+<div class="card">
+
+<h3>🔨 Punishments</h3>
+
+
+<label>
+
+<input type="checkbox" name="kick"
+{% if moderation.kick.enabled %}checked{% endif %}>
+
+Allow Kick
+
+</label>
+
+
+<br><br>
+
+
+<label>
+
+<input type="checkbox" name="ban"
+{% if moderation.ban.enabled %}checked{% endif %}>
+
+Allow Ban
+
+</label>
+
+
+<br><br>
+
+
+<label>
+
+<input type="checkbox" name="mute"
+{% if moderation.mute.enabled %}checked{% endif %}>
+
+Allow Mute
+
+</label>
+
+
+<br><br>
+
+
+<label>
+Mute Duration (seconds)
+</label>
+
+
+<input
+
+name="mute_duration"
+
+value="{{ moderation.mute.duration }}">
+
+
+</div>
+
+
+
+
+
+<button type="submit">
+
+🔥 Save Moderation Settings
+
+</button>
+
+
+</form>
+
+
+<br><br>
+
+
+<a href="/" class="back-button">
+
+⬅ Back to Dashboard
+
+</a>
+
+
+
+</div>
+<script src="{{ url_for('static', filename='js/discord-selectors.js') }}"></script>
+
+</body>
+
+</html>
