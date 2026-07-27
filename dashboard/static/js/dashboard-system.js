@@ -1,47 +1,40 @@
 	(() => {
-	   const sidebar = document.querySelector(".app-sidebar");
-	const button = document.querySelector("[data-sidebar-toggle]");
+const sidebar = document.querySelector(".app-sidebar");
+const menu = document.querySelector(".mobile-menu");
 
-	let backdrop = document.querySelector(".sidebar-backdrop");
+let backdrop = document.querySelector(".sidebar-backdrop");
 
-	if(!backdrop){
+if (!backdrop) {
+    backdrop = document.createElement("div");
+    backdrop.className = "sidebar-backdrop";
+    document.body.appendChild(backdrop);
+}
 
-		backdrop=document.createElement("div");
+function closeSidebar() {
+    sidebar.classList.remove("open");
+    backdrop.classList.remove("show");
+}
 
-		backdrop.className="sidebar-backdrop";
+function openSidebar() {
+    sidebar.classList.add("open");
+    backdrop.classList.add("show");
+}
 
-		document.body.appendChild(backdrop);
+menu?.addEventListener("click", () => {
 
-	}
+    if (sidebar.classList.contains("open")) {
 
-	button?.addEventListener("click",()=>{
+        closeSidebar();
 
-		sidebar.classList.toggle("open");
+    } else {
 
-		backdrop.classList.toggle("show");
+        openSidebar();
 
-	});
+    }
 
-	backdrop.addEventListener("click",()=>{
+});
 
-		sidebar.classList.remove("open");
-
-		backdrop.classList.remove("show");
-
-	});
-    document.querySelectorAll("[data-preview-source]").forEach(source => {
-        const key = source.dataset.previewSource;
-        const target = document.querySelector(`[data-preview-target="${key}"]`);
-
-        if (!target) return;
-
-        function update() {
-            target.textContent = source.value || source.placeholder || "Preview";
-        }
-
-        update();
-        source.addEventListener("input", update);
-    });
+backdrop.addEventListener("click", closeSidebar);
 
     document.querySelectorAll("form").forEach(form => {
         let changed = false;

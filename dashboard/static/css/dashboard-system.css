@@ -1716,10 +1716,10 @@ MOBILE SLIDE-OUT SIDEBAR
 
 }
 /* ==========================================================
-   MOBILE SIDEBAR V2
+   CLEAN MOBILE SIDEBAR
    ========================================================== */
 
-@media screen and (max-width:900px){
+@media (max-width:760px){
 
     .app-sidebar{
 
@@ -1729,120 +1729,55 @@ MOBILE SLIDE-OUT SIDEBAR
         left:0;
         bottom:0;
 
-        width:285px;
-        max-width:82vw;
+        width:270px;
 
-        z-index:5000;
+        transform:translateX(-100%);
 
-        transform:translateX(-110%);
-        transition:.28s ease;
+        transition:transform .25s ease;
 
-        box-shadow:
-        20px 0 45px rgba(0,0,0,.55);
+        z-index:1001;
 
     }
-.sidebar-backdrop{
 
-    position:fixed;
-    inset:0;
+    .app-sidebar.open{
 
-    background:rgba(0,0,0,.45);
+        transform:translateX(0);
 
-    opacity:0;
-    visibility:hidden;
+    }
 
-    pointer-events:none;
+    .sidebar-backdrop{
 
-    transition:.25s;
+        position:fixed;
 
-    z-index:9998;
+        inset:0;
 
-}
+        background:rgba(0,0,0,.45);
 
-.sidebar-backdrop.show{
+        opacity:0;
 
-    opacity:1;
-    visibility:visible;
+        visibility:hidden;
 
-    pointer-events:auto;
+        pointer-events:none;
 
-}
+        transition:.25s ease;
 
-.app-sidebar{
+        z-index:1000;
 
-    z-index:9999;
-
-}
+    }
 
     .sidebar-backdrop.show{
 
         opacity:1;
+
         visibility:visible;
+
+        pointer-events:auto;
 
     }
 
     .mobile-menu{
 
-        display:grid!important;
-
-        place-items:center;
-
-        width:48px;
-        height:48px;
-
-        border-radius:12px;
-
-        background:#171b1f;
-
-        font-size:22px;
-
-    }
-
-    .mobile-menu:hover{
-
-        background:#252b31;
-
-    }
-
-    .app-nav{
-
-        padding:14px 10px 24px;
-
-        gap:8px;
-
-    }
-
-    .app-nav a{
-
-        min-height:54px;
-
-        border-radius:14px;
-
-        padding:0 14px;
-
-        font-size:15px;
-
-    }
-
-    .nav-icon{
-
-        width:42px;
-
-        font-size:21px;
-
-    }
-
-    .nav-label{
-
-        font-size:14px;
-
-        font-weight:600;
-
-    }
-
-    .sidebar-footer{
-
-        margin-top:auto;
+        display:block;
 
     }
 
