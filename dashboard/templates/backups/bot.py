@@ -383,55 +383,6 @@ def api_member_role(guild_id):
             }
         ), 500
 
-def dashboard_feature_files():
-    """Return feature-to-file mappings after all file constants are initialized."""
-    return {
-        "welcome": WELCOME_FILE,
-        "tickets": TICKET_FILE,
-        "moderation": MODERATION_FILE,
-        "embeds": EMBED_FILE,
-        "reaction_roles": REACTION_ROLE_FILE,
-        "rules": RULES_FILE,
-        "settings": DASHBOARD_FILE,
-        "economy": ECONOMY_FILE,
-        "polls": POLL_FILE,
-        "giveaways": GIVEAWAY_FILE,
-        "jobs": JOBS_CONFIG_FILE,
-        "command_permissions": COMMAND_PERMISSIONS_FILE,
-        "sticky_messages": STICKY_FILE,
-        "auto_announcements": ANNOUNCEMENTS_FILE,
-        "reminders": REMINDERS_FILE,
-        "role_manager": ROLE_MANAGER_FILE,
-    }
-
-
-@app.route("/api/dashboard/settings/<feature>", methods=["POST"])
-def dashboard_save_feature(feature):
-    """Receive dashboard settings and save them inside the bot service."""
-    if not dashboard_authorized():
-        return jsonify({"error": "Unauthorized"}), 401
-
-    target_file = dashboard_feature_files().get(feature)
-    if not target_file:
-        return jsonify({"error": "Unknown feature"}), 404
-
-    payload = request.get_json(silent=True)
-    if payload is None:
-        return jsonify({"error": "Missing JSON settings"}), 400
-
-    try:
-        with open(target_file, "w", encoding="utf-8") as file:
-            json.dump(payload, file, indent=4, ensure_ascii=False)
-    except OSError as error:
-        print(f"Could not save {feature} settings: {error}")
-        return jsonify({"error": str(error)}), 500
-
-    return jsonify({
-        "ok": True,
-        "message": f"{feature} settings received",
-    })
-
-
 @app.route("/api/dashboard/apply/<feature>", methods=["POST"])
 def dashboard_apply_feature(feature):
     if not dashboard_authorized():
@@ -461,13 +412,18 @@ def dashboard_apply_feature(feature):
 
 
 def run_web():
-    """Run the private bot API on Railway's assigned public port."""
-    port = int(os.getenv("PORT", "10000"))
+    port = int(
+        os.getenv(
+            "PORT",
+            "10000"
+        )
+    )
+
     app.run(
         host="0.0.0.0",
         port=port,
         debug=False,
-        use_reloader=False,
+        use_reloader=False
     )
 
 
@@ -486,7 +442,57 @@ TICKET_CATEGORY_NAME = "Tickets"
 STAFF_ROLES = ["Admin", "Staff"]
 DAILY_REWARD = 500
 
+FEATURE_FILES = {
+    "welcome": WELCOME_FILE,
+    "tickets": TICKET_FILE,
+    "moderation": MODERATION_FILE,
+    "embeds": EMBED_FILE,
+    "reaction_roles": REACTION_ROLE_FILE,
+    "rules": RULES_FILE,
+    "settings": DASHBOARD_FILE,
+    "economy": ECONOMY_FILE,
+    "polls": POLL_FILE,
+    "giveaways": GIVEAWAY_FILE,
+}
 
+
+@app.route(
+    "/api/dashboard/settings/<feature>",
+    methods=["POST"]
+)
+def dashboard_save_feature(feature):
+    if not dashboard_authorized():
+        return jsonify({"error": "Unauthorized"}), 401
+
+    target_file = FEATURE_FILES.get(feature)
+
+    if not target_file:
+        return jsonify({"error": "Unknown feature"}), 404
+
+    payload = request.get_json(silent=True)
+
+    if payload is None:
+        return jsonify({"error": "Missing JSON payload"}), 400
+
+    try:
+        with open(
+            target_file,
+            "w",
+            encoding="utf-8"
+        ) as file:
+            json.dump(
+                payload,
+                file,
+                indent=4,
+                ensure_ascii=False
+            )
+
+        return jsonify({"ok": True})
+
+    except OSError as error:
+        return jsonify({
+            "error": str(error)
+        }), 500
 # ------------------- DYNAMIC RULES SYSTEM -------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RULES_FILE = os.path.join(BASE_DIR, "rules.json")
