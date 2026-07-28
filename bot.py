@@ -442,7 +442,57 @@ TICKET_CATEGORY_NAME = "Tickets"
 STAFF_ROLES = ["Admin", "Staff"]
 DAILY_REWARD = 500
 
+FEATURE_FILES = {
+    "welcome": WELCOME_FILE,
+    "tickets": TICKET_FILE,
+    "moderation": MODERATION_FILE,
+    "embeds": EMBED_FILE,
+    "reaction_roles": REACTION_ROLE_FILE,
+    "rules": RULES_FILE,
+    "settings": DASHBOARD_FILE,
+    "economy": ECONOMY_FILE,
+    "polls": POLL_FILE,
+    "giveaways": GIVEAWAY_FILE,
+}
 
+
+@app.route(
+    "/api/dashboard/settings/<feature>",
+    methods=["POST"]
+)
+def dashboard_save_feature(feature):
+    if not dashboard_authorized():
+        return jsonify({"error": "Unauthorized"}), 401
+
+    target_file = FEATURE_FILES.get(feature)
+
+    if not target_file:
+        return jsonify({"error": "Unknown feature"}), 404
+
+    payload = request.get_json(silent=True)
+
+    if payload is None:
+        return jsonify({"error": "Missing JSON payload"}), 400
+
+    try:
+        with open(
+            target_file,
+            "w",
+            encoding="utf-8"
+        ) as file:
+            json.dump(
+                payload,
+                file,
+                indent=4,
+                ensure_ascii=False
+            )
+
+        return jsonify({"ok": True})
+
+    except OSError as error:
+        return jsonify({
+            "error": str(error)
+        }), 500
 # ------------------- DYNAMIC RULES SYSTEM -------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RULES_FILE = os.path.join(BASE_DIR, "rules.json")

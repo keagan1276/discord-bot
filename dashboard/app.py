@@ -58,25 +58,51 @@ def bot_api_get(endpoint):
         return None
 
 
-def bot_api_post(endpoint):
+def bot_api_post(endpoint, payload=None):
     try:
         response = requests.post(
             f"{BOT_API_URL}{endpoint}",
-            headers={"X-Dashboard-Key": DASHBOARD_API_KEY},
+            headers={
+                "X-Dashboard-Key": DASHBOARD_API_KEY
+            },
+            json=payload,
             timeout=18
         )
+
         response.raise_for_status()
         return response.json()
+
     except requests.RequestException as error:
         detail = ""
+
         if getattr(error, "response", None) is not None:
             try:
-                detail = error.response.json().get("error", "")
+                detail = error.response.json().get(
+                    "error",
+                    ""
+                )
             except ValueError:
                 detail = error.response.text
-        print(f"Bot apply error: {detail or error}")
-        return {"ok": False, "error": detail or str(error)}
 
+        print(f"Bot API error: {detail or error}")
+
+        return {
+            "ok": False,
+            "error": detail or str(error)
+        }
+
+def save_and_apply_feature(feature, settings):
+    save_result = bot_api_post(
+        f"/api/dashboard/settings/{feature}",
+        settings
+    )
+
+    if not save_result.get("ok"):
+        return save_result
+
+    return bot_api_post(
+        f"/api/dashboard/apply/{feature}"
+    )
 
 def apply_to_discord(feature):
     return bot_api_post(f"/api/dashboard/apply/{feature}")
@@ -787,7 +813,10 @@ def welcome():
         with open(WELCOME_FILE, "w", encoding="utf-8") as file:
             json.dump(welcome, file, indent=4)
 
-        apply_to_discord("welcome")
+        save_and_apply_feature(
+    "welcome",
+    welcome
+)
 
 
     return render_template(
@@ -1014,7 +1043,7 @@ def tickets():
                 ensure_ascii=False
             )
 
-        apply_result = apply_to_discord("tickets")
+        save_and_apply_feature("tickets", ticket)
 
         if apply_result and apply_result.get("ok"):
             flash(
@@ -2436,7 +2465,7 @@ def embeds():
         with open(EMBED_FILE, "w", encoding="utf-8") as file:
             json.dump(embed, file, indent=4)
 
-        apply_to_discord("embeds")
+        save_and_apply_feature("embeds", embed)
 
 
     with open(EMBED_FILE, "r", encoding="utf-8") as file:
@@ -2593,7 +2622,7 @@ def polls():
         with open(POLL_FILE, "w", encoding="utf-8") as file:
             json.dump(poll_data, file, indent=4, ensure_ascii=False)
 
-        result = apply_to_discord("polls")
+        result = save_and_apply_feature("polls", poll_data)
         if not result or not result.get("ok"):
             error = (result or {}).get("error", "The bot could not publish the poll.")
             return render_template("polls.html", poll=poll_data, publish_error=error), 400
@@ -2631,7 +2660,7 @@ def giveaways():
         with open(GIVEAWAY_FILE, "w", encoding="utf-8") as file:
             json.dump(giveaway_data, file, indent=4, ensure_ascii=False)
 
-        result = apply_to_discord("giveaways")
+        save_and_apply_feature("giveaways", giveaway_data)
         if not result or not result.get("ok"):
             error = (result or {}).get("error", "The bot could not start the giveaway.")
             return render_template(
@@ -2807,7 +2836,7 @@ def rules():
                 ensure_ascii=False
             )
 
-        apply_to_discord("rules")
+        save_and_apply_feature("rules", rules_data)
         return redirect("/rules")
 
     return render_template(
@@ -2818,16 +2847,9 @@ def rules():
 if __name__ == "__main__":
     print("RUNNING FILE:", os.path.abspath(__file__))
 
-if __name__ == "__main__":
-    port = int(
-        os.getenv(
-            "PORT",
-            "5050"
-        )
-    )
-
     app.run(
-        host="0.0.0.0",
-        port=port,
-        debug=False
+        host="127.0.0.1",
+        port=5050,
+        debug=True,
+        use_reloader=False
     )
