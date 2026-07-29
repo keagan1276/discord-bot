@@ -38,60 +38,79 @@ ADMINISTRATOR_PERMISSION = 1 << 3
 MANAGE_GUILD_PERMISSION = 1 << 5
 
 
-def bot_api_get(endpoint, default=None):
-    """Fetch JSON from the bot service."""
+def _bot_api_request(method, endpoint, payload=None, timeout=18):
+    """Send an authenticated request from the dashboard to the bot service."""
+    if not BOT_API_URL:
+        return {"ok": False, "error": "BOT_API_URL is not configured"}
+
+    if not DASHBOARD_API_KEY:
+        return {"ok": False, "error": "DASHBOARD_API_KEY is not configured"}
+
     try:
-        response = requests.get(
-            f"{BOT_API_URL}{endpoint}",
+        response = requests.request(
+            method=method,
+            url=f"{BOT_API_URL}{endpoint}",
             headers={"X-Dashboard-Key": DASHBOARD_API_KEY},
-            timeout=8,
+            json=payload,
+            timeout=timeout,
         )
-        response.raise_for_status()
-        return response.json()
     except requests.RequestException as error:
-        print(f"Bot API GET error: {error}")
-        return default
+        print(f"Bot API connection error ({endpoint}): {error}")
+        return {"ok": False, "error": str(error)}
+
+    try:
+        result = response.json()
+    except ValueError:
+        result = {
+            "ok": False,
+            "error": response.text.strip() or "The bot returned an invalid response",
+        }
+
+    if not response.ok:
+        result.setdefault("ok", False)
+        result.setdefault("error", f"Bot API returned HTTP {response.status_code}")
+        print(f"Bot API error ({endpoint}): {result.get('error')}")
+        return result
+
+    if isinstance(result, dict):
+        result.setdefault("ok", True)
+    return result
+
+
+def bot_api_get(endpoint):
+    result = _bot_api_request("GET", endpoint, timeout=5)
+    if isinstance(result, dict) and result.get("ok") is False:
+        return None
+    return result
 
 
 def bot_api_post(endpoint, payload=None):
-    """POST optional JSON to the bot service and return a consistent result."""
-    try:
-        response = requests.post(
-            f"{BOT_API_URL}{endpoint}",
-            headers={"X-Dashboard-Key": DASHBOARD_API_KEY},
-            json=payload,
-            timeout=20,
-        )
-        response.raise_for_status()
-        data = response.json()
-        return data if isinstance(data, dict) else {"ok": True, "data": data}
-    except requests.RequestException as error:
-        detail = ""
-        if getattr(error, "response", None) is not None:
-            try:
-                detail = error.response.json().get("error", "")
-            except (ValueError, AttributeError):
-                detail = error.response.text
-        print(f"Bot API POST error: {detail or error}")
-        return {"ok": False, "error": detail or str(error)}
-
-
-def save_feature_to_bot(feature, settings):
-    """Copy settings into the bot service's filesystem."""
-    return bot_api_post(f"/api/dashboard/settings/{feature}", settings)
-
-
-def apply_to_discord(feature):
-    """Ask the running bot to apply already-synced settings."""
-    return bot_api_post(f"/api/dashboard/apply/{feature}")
+    return _bot_api_request("POST", endpoint, payload=payload, timeout=18)
 
 
 def save_and_apply_feature(feature, settings):
-    """Sync settings first, then ask the bot to apply them."""
-    save_result = save_feature_to_bot(feature, settings)
-    if not save_result.get("ok"):
-        return save_result
-    return apply_to_discord(feature)
+    """Send settings to the bot first, then ask the bot to apply them."""
+    save_result = bot_api_post(
+        f"/api/dashboard/settings/{feature}",
+        settings,
+    )
+    if not isinstance(save_result, dict) or not save_result.get("ok"):
+        return save_result or {
+            "ok": False,
+            "error": f"The bot could not save {feature} settings",
+        }
+
+    apply_result = bot_api_post(f"/api/dashboard/apply/{feature}")
+    if not isinstance(apply_result, dict):
+        return {
+            "ok": False,
+            "error": f"The bot returned an invalid response while applying {feature}",
+        }
+    return apply_result
+
+
+def apply_to_discord(feature):
+    return bot_api_post(f"/api/dashboard/apply/{feature}")
 
 
 BASE_FOLDER = os.path.dirname(os.path.abspath(__file__))
@@ -459,20 +478,24 @@ def servers():
     
 @app.route("/invite")
 def invite_bot():
-    client_id = str(DISCORD_CLIENT_ID).strip()
+    client_id = str(
+        DISCORD_CLIENT_ID
+    ).strip()
+
     if not client_id.isdigit():
-        return "DISCORD_CLIENT_ID is missing or invalid.", 500
+        return (
+            "DISCORD_CLIENT_ID is missing or invalid.",
+            500
+        )
 
-    query = urlencode({
-        "client_id": client_id,
-        "scope": "bot applications.commands",
-        "permissions": "8",
-        "guild_id": request.args.get("guild_id", ""),
-        "disable_guild_select": "false",
-    })
-    return redirect(f"https://discord.com/oauth2/authorize?{query}")
+    return redirect(
+        "https://discord.com/oauth2/authorize"
+        f"?client_id={client_id}"
+    )
 
+    print(f"BOT INVITE URL: {invite_url}")
 
+    return redirect(invite_url)
     
     
 @app.route("/select-server/<guild_id>")
@@ -638,60 +661,6 @@ def load_or_create_json(path, default):
         return default.copy()
 
 
-
-FEATURE_SYNC = {
-    "economy": ("economy", ECONOMY_FILE, True),
-    "welcome": ("welcome", WELCOME_FILE, True),
-    "tickets": ("tickets", TICKET_FILE, True),
-    "moderation": ("moderation", MODERATION_FILE, True),
-    "settings": ("settings", DASHBOARD_FILE, True),
-    "jobs": ("jobs", JOBS_CONFIG_FILE, False),
-    "command_settings": ("command_permissions", COMMAND_PERMISSIONS_FILE, False),
-    "sticky_messages": ("sticky_messages", STICKY_FILE, False),
-    "auto_announcements": ("auto_announcements", ANNOUNCEMENTS_FILE, False),
-    "reminders": ("reminders", REMINDERS_FILE, False),
-    "role_manager": ("role_manager", ROLE_MANAGER_FILE, False),
-    "embeds": ("embeds", EMBED_FILE, True),
-    "reaction_roles": ("reaction_roles", REACTION_ROLE_FILE, True),
-    "polls": ("polls", POLL_FILE, True),
-    "giveaways": ("giveaways", GIVEAWAY_FILE, True),
-    "rules": ("rules", RULES_FILE, True),
-}
-
-
-@app.after_request
-def sync_saved_settings_to_bot(response):
-    """After a successful dashboard POST, sync that feature to the bot service."""
-    if request.method != "POST" or response.status_code >= 400:
-        return response
-
-    config = FEATURE_SYNC.get(request.endpoint or "")
-    if not config:
-        return response
-
-    feature, path, should_apply = config
-    try:
-        with open(path, "r", encoding="utf-8") as file:
-            settings = json.load(file)
-    except (OSError, json.JSONDecodeError) as error:
-        print(f"Could not read {feature} settings for sync: {error}")
-        return response
-
-    result = save_feature_to_bot(feature, settings)
-    if result.get("ok") and should_apply:
-        result = apply_to_discord(feature)
-
-    if not result.get("ok"):
-        print(f"Could not sync {feature}: {result.get('error', 'Unknown error')}")
-        flash(
-            f"Settings saved locally, but the bot could not be updated: "
-            f"{result.get('error', 'Unknown error')}",
-            "warning",
-        )
-
-    return response
-
-
 @app.route("/")
 def home():
 
@@ -807,7 +776,9 @@ def economy():
         # Leave your existing save code here for now.
         with open(ECONOMY_FILE, "w", encoding="utf-8") as file:
             json.dump(economy, file, indent=4)
-        # Synced automatically after a successful POST.
+
+        apply_result = save_and_apply_feature("economy", economy)
+
     return render_template(
         "economy.html",
         economy=economy
@@ -847,7 +818,10 @@ def welcome():
 
         with open(WELCOME_FILE, "w", encoding="utf-8") as file:
             json.dump(welcome, file, indent=4)
-        # Synced automatically after a successful POST.
+
+        apply_result = save_and_apply_feature("welcome", welcome)
+
+
     return render_template(
         "welcome.html",
         welcome=welcome
@@ -1072,7 +1046,7 @@ def tickets():
                 ensure_ascii=False
             )
 
-        apply_result = {"ok": True}
+        apply_result = save_and_apply_feature("tickets", ticket)
 
         if apply_result and apply_result.get("ok"):
             flash(
@@ -1391,10 +1365,22 @@ def moderation():
                 ensure_ascii=False
             )
 
-        flash(
-            "Moderation settings saved for this server.",
-            "success"
+        apply_result = save_and_apply_feature(
+            "moderation",
+            moderation_data
         )
+
+        if not apply_result.get("ok"):
+            flash(
+                f"Moderation settings were saved locally, but the bot update failed: "
+                f"{apply_result.get('error', 'Unknown error')}",
+                "warning"
+            )
+        else:
+            flash(
+                "Moderation settings saved for this server.",
+                "success"
+            )
 
         return redirect(url_for("moderation"))
 
@@ -1659,7 +1645,10 @@ def settings():
 
         with open(DASHBOARD_FILE, "w", encoding="utf-8") as file:
             json.dump(dashboard, file, indent=4)
-        # Synced automatically after a successful POST.
+
+        apply_result = save_and_apply_feature("settings", dashboard)
+
+
     return render_template(
     "settings.html",
     dashboard=dashboard
@@ -2490,7 +2479,10 @@ def embeds():
 
         with open(EMBED_FILE, "w", encoding="utf-8") as file:
             json.dump(embed, file, indent=4)
-        # Synced automatically after a successful POST.
+
+        save_and_apply_feature("embeds", embed)
+
+
     with open(EMBED_FILE, "r", encoding="utf-8") as file:
         embed = json.load(file)
 
@@ -2539,6 +2531,13 @@ def embeds():
         with open(EMBED_FILE, "w", encoding="utf-8") as file:
             json.dump(embed, file, indent=4)
 
+        apply_result = save_and_apply_feature("embeds", embed)
+        if not apply_result.get("ok"):
+            flash(
+                f"Embed settings were saved locally, but the bot update failed: "
+                f"{apply_result.get('error', 'Unknown error')}",
+                "warning"
+            )
 
 
     return render_template(
@@ -2612,7 +2611,10 @@ def reaction_roles():
                 file,
                 indent=4
             )
-        # Synced automatically after a successful POST.
+
+        apply_result = save_and_apply_feature("reaction_roles", roles)
+
+
     return render_template(
         "reaction_roles.html",
         roles=roles
@@ -2641,6 +2643,12 @@ def polls():
 
         with open(POLL_FILE, "w", encoding="utf-8") as file:
             json.dump(poll_data, file, indent=4, ensure_ascii=False)
+
+        result = save_and_apply_feature("polls", poll_data)
+        if not result or not result.get("ok"):
+            error = (result or {}).get("error", "The bot could not publish the poll.")
+            return render_template("polls.html", poll=poll_data, publish_error=error), 400
+
         return redirect(url_for("polls", published="1"))
 
     return render_template("polls.html", poll=poll_data)
@@ -2673,7 +2681,8 @@ def giveaways():
 
         with open(GIVEAWAY_FILE, "w", encoding="utf-8") as file:
             json.dump(giveaway_data, file, indent=4, ensure_ascii=False)
-        # Synced automatically after a successful POST.
+
+        result = save_and_apply_feature("giveaways", giveaway_data)
         if not result or not result.get("ok"):
             error = (result or {}).get("error", "The bot could not start the giveaway.")
             return render_template(
@@ -2848,7 +2857,8 @@ def rules():
                 indent=4,
                 ensure_ascii=False
             )
-        # Synced automatically after a successful POST.
+
+        save_and_apply_feature("rules", rules_data)
         return redirect("/rules")
 
     return render_template(
@@ -2858,10 +2868,10 @@ def rules():
 
 if __name__ == "__main__":
     print("RUNNING FILE:", os.path.abspath(__file__))
-    port = int(os.getenv("PORT", "5050"))
+
     app.run(
-        host="0.0.0.0",
-        port=port,
-        debug=False,
-        use_reloader=False,
+        host="127.0.0.1",
+        port=5050,
+        debug=True,
+        use_reloader=False
     )

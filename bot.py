@@ -383,55 +383,6 @@ def api_member_role(guild_id):
             }
         ), 500
 
-def dashboard_feature_files():
-    """Return feature-to-file mappings after all file constants are initialized."""
-    return {
-        "welcome": WELCOME_FILE,
-        "tickets": TICKET_FILE,
-        "moderation": MODERATION_FILE,
-        "embeds": EMBED_FILE,
-        "reaction_roles": REACTION_ROLE_FILE,
-        "rules": RULES_FILE,
-        "settings": DASHBOARD_FILE,
-        "economy": ECONOMY_FILE,
-        "polls": POLL_FILE,
-        "giveaways": GIVEAWAY_FILE,
-        "jobs": JOBS_CONFIG_FILE,
-        "command_permissions": COMMAND_PERMISSIONS_FILE,
-        "sticky_messages": STICKY_FILE,
-        "auto_announcements": ANNOUNCEMENTS_FILE,
-        "reminders": REMINDERS_FILE,
-        "role_manager": ROLE_MANAGER_FILE,
-    }
-
-
-@app.route("/api/dashboard/settings/<feature>", methods=["POST"])
-def dashboard_save_feature(feature):
-    """Receive dashboard settings and save them inside the bot service."""
-    if not dashboard_authorized():
-        return jsonify({"error": "Unauthorized"}), 401
-
-    target_file = dashboard_feature_files().get(feature)
-    if not target_file:
-        return jsonify({"error": "Unknown feature"}), 404
-
-    payload = request.get_json(silent=True)
-    if payload is None:
-        return jsonify({"error": "Missing JSON settings"}), 400
-
-    try:
-        with open(target_file, "w", encoding="utf-8") as file:
-            json.dump(payload, file, indent=4, ensure_ascii=False)
-    except OSError as error:
-        print(f"Could not save {feature} settings: {error}")
-        return jsonify({"error": str(error)}), 500
-
-    return jsonify({
-        "ok": True,
-        "message": f"{feature} settings received",
-    })
-
-
 @app.route("/api/dashboard/apply/<feature>", methods=["POST"])
 def dashboard_apply_feature(feature):
     if not dashboard_authorized():
@@ -461,13 +412,18 @@ def dashboard_apply_feature(feature):
 
 
 def run_web():
-    """Run the private bot API on Railway's assigned public port."""
-    port = int(os.getenv("PORT", "10000"))
+    port = int(
+        os.getenv(
+            "PORT",
+            "10000"
+        )
+    )
+
     app.run(
         host="0.0.0.0",
         port=port,
         debug=False,
-        use_reloader=False,
+        use_reloader=False
     )
 
 
@@ -480,12 +436,9 @@ intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
 
-Thread(target=run_web, daemon=True).start()
-
 TICKET_CATEGORY_NAME = "Tickets"
 STAFF_ROLES = ["Admin", "Staff"]
 DAILY_REWARD = 500
-
 
 # ------------------- DYNAMIC RULES SYSTEM -------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -510,6 +463,54 @@ LOGS_FILE = os.path.join(BASE_DIR, "logs.json")
 PERMISSIONS_FILE = os.path.join(BASE_DIR, "permission_manager.json")
 TRANSCRIPTS_FOLDER = os.path.join(BASE_DIR, "ticket_transcripts")
 os.makedirs(TRANSCRIPTS_FOLDER, exist_ok=True)
+
+
+# ------------------- DASHBOARD COMMUNICATION -------------------
+FEATURE_FILES = {
+    "welcome": WELCOME_FILE,
+    "tickets": TICKET_FILE,
+    "moderation": MODERATION_FILE,
+    "embeds": EMBED_FILE,
+    "reaction_roles": REACTION_ROLE_FILE,
+    "rules": RULES_FILE,
+    "settings": DASHBOARD_FILE,
+    "economy": ECONOMY_FILE,
+    "polls": POLL_FILE,
+    "giveaways": GIVEAWAY_FILE,
+}
+
+
+@app.route("/api/dashboard/settings/<feature>", methods=["POST"])
+def dashboard_save_feature(feature):
+    """Receive dashboard settings and persist them in the bot service."""
+    if not dashboard_authorized():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+
+    target_file = FEATURE_FILES.get(feature)
+    if target_file is None:
+        return jsonify({"ok": False, "error": "Unknown feature"}), 404
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({
+            "ok": False,
+            "error": "The request body must be a JSON object"
+        }), 400
+
+    try:
+        temporary_file = f"{target_file}.tmp"
+        with open(temporary_file, "w", encoding="utf-8") as file:
+            json.dump(payload, file, indent=4, ensure_ascii=False)
+        os.replace(temporary_file, target_file)
+    except OSError as error:
+        print(f"Dashboard save error ({feature}): {error}")
+        return jsonify({"ok": False, "error": str(error)}), 500
+
+    return jsonify({
+        "ok": True,
+        "feature": feature,
+        "message": f"{feature} settings saved by the bot service"
+    })
 def load_rules() -> dict:
     try:
         with open(RULES_FILE, "r", encoding="utf-8") as file:
@@ -4367,4 +4368,5 @@ if not TOKEN:
 
 print("STARTING DISCORD BOT...")
 
+Thread(target=run_web, daemon=True).start()
 bot.run(TOKEN)
