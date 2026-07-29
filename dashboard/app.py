@@ -2869,9 +2869,11 @@ def rules():
 if __name__ == "__main__":
     print("RUNNING FILE:", os.path.abspath(__file__))
 
+    port = int(os.getenv("PORT", "5050"))
+
     app.run(
-        host="127.0.0.1",
-        port=5050,
-        debug=True,
+        host="0.0.0.0",
+        port=port,
+        debug=False,
         use_reloader=False
     )
