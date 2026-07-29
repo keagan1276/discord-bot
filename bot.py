@@ -15,6 +15,8 @@ from flask import Flask, jsonify, request
 from threading import Thread
 from discord.ext import tasks
 import secrets
+import urllib.request
+import urllib.error
 
 app = Flask(__name__)
 print("BOT.PY IS RUNNING")
@@ -3614,8 +3616,183 @@ async def setreactionrole(
 
     await interaction.response.send_message("✅ Reaction role set")
 
+# ------------------- FLAG TRANSLATOR -------------------
+# React to a message with one of these flags to post a translation in the same server channel.
+FLAG_TRANSLATIONS = {
+    "🇫🇷": ("FR", "French"),
+    "🇩🇪": ("DE", "German"),
+    "🇪🇸": ("ES", "Spanish"),
+    "🇮🇹": ("IT", "Italian"),
+    "🇵🇹": ("PT-PT", "Portuguese"),
+    "🇧🇷": ("PT-BR", "Brazilian Portuguese"),
+    "🇬🇧": ("EN-GB", "English (UK)"),
+    "🇺🇸": ("EN-US", "English (US)"),
+    "🇳🇱": ("NL", "Dutch"),
+    "🇵🇱": ("PL", "Polish"),
+    "🇷🇺": ("RU", "Russian"),
+    "🇺🇦": ("UK", "Ukrainian"),
+    "🇯🇵": ("JA", "Japanese"),
+    "🇨🇳": ("ZH-HANS", "Chinese (Simplified)"),
+    "🇰🇷": ("KO", "Korean"),
+    "🇹🇷": ("TR", "Turkish"),
+    "🇸🇦": ("AR", "Arabic"),
+}
+
+DEEPL_API_KEY = os.getenv("DEEPL_API_KEY", "").strip()
+DEEPL_API_URL = os.getenv(
+    "DEEPL_API_URL",
+    "https://api-free.deepl.com/v2/translate"
+).strip()
+TRANSLATION_COOLDOWN = {}
+
+
+def _deepl_translate_sync(text: str, target_language: str) -> dict:
+    if not DEEPL_API_KEY:
+        raise RuntimeError("DEEPL_API_KEY is not configured on the bot service.")
+
+    body = json.dumps({
+        "text": [text],
+        "target_lang": target_language
+    }).encode("utf-8")
+
+    api_request = urllib.request.Request(
+        DEEPL_API_URL,
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"DeepL-Auth-Key {DEEPL_API_KEY}",
+            "Content-Type": "application/json",
+            "User-Agent": "PiratesBot-Translator/1.0"
+        }
+    )
+
+    try:
+        with urllib.request.urlopen(api_request, timeout=15) as response:
+            result = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        details = error.read().decode("utf-8", errors="replace")
+        raise RuntimeError(
+            f"Translation API returned HTTP {error.code}: {details[:300]}"
+        ) from error
+    except (urllib.error.URLError, TimeoutError) as error:
+        raise RuntimeError(f"Translation API connection failed: {error}") from error
+
+    translations = result.get("translations", [])
+    if not translations:
+        raise RuntimeError("The translation API returned no translation.")
+
+    return translations[0]
+
+
+async def translate_reacted_message(payload) -> bool:
+    emoji = str(payload.emoji)
+    language = FLAG_TRANSLATIONS.get(emoji)
+    if language is None or payload.guild_id is None:
+        return False
+
+    if bot.user and payload.user_id == bot.user.id:
+        return True
+
+    target_code, target_name = language
+    cooldown_key = (payload.user_id, payload.message_id, target_code)
+    now = time.monotonic()
+    if now - TRANSLATION_COOLDOWN.get(cooldown_key, 0) < 10:
+        return True
+    TRANSLATION_COOLDOWN[cooldown_key] = now
+
+    channel = bot.get_channel(payload.channel_id)
+    if channel is None:
+        try:
+            channel = await bot.fetch_channel(payload.channel_id)
+        except discord.HTTPException:
+            return True
+
+    try:
+        message = await channel.fetch_message(payload.message_id)
+    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+        return True
+
+    source_text = str(message.content or "").strip()
+    if not source_text:
+        return True
+
+    # Keep requests and Discord embeds at a safe size.
+    source_text = source_text[:4000]
+
+    guild = bot.get_guild(payload.guild_id)
+    member = guild.get_member(payload.user_id) if guild else None
+    if member is None and guild is not None:
+        try:
+            member = await guild.fetch_member(payload.user_id)
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            member = None
+
+    if member is None:
+        return True
+
+    try:
+        translated = await asyncio.to_thread(
+            _deepl_translate_sync,
+            source_text,
+            target_code
+        )
+
+        translated_text = str(translated.get("text", "")).strip()
+        detected = str(
+            translated.get("detected_source_language", "Unknown")
+        ).upper()
+
+        embed = discord.Embed(
+            title=f"{emoji} Translation to {target_name}",
+            description=translated_text[:4096],
+            colour=discord.Color.blurple()
+        )
+        embed.add_field(
+            name="Original message",
+            value=source_text[:1024],
+            inline=False
+        )
+        embed.set_footer(
+            text=f"Detected language: {detected} • #{getattr(channel, 'name', 'channel')}"
+        )
+
+        embed.set_author(
+            name=f"Requested by {member.display_name}",
+            icon_url=member.display_avatar.url
+        )
+
+        # Post the translation directly under the original message in the server.
+        await message.reply(
+            embed=embed,
+            mention_author=False,
+            allowed_mentions=discord.AllowedMentions.none()
+        )
+    except Exception as error:
+        print(f"Translator error: {error}")
+        try:
+            await message.reply(
+                content=f"❌ Translation failed: {error}",
+                mention_author=False,
+                allowed_mentions=discord.AllowedMentions.none(),
+                delete_after=15
+            )
+        except discord.HTTPException:
+            pass
+
+    # Remove the user's flag so they can request the same translation again.
+    try:
+        await message.remove_reaction(payload.emoji, member)
+    except (discord.Forbidden, discord.HTTPException):
+        pass
+
+    return True
+
+
 @bot.event
 async def on_raw_reaction_add(payload):
+    # Translator and reaction roles intentionally share this single event handler.
+    await translate_reacted_message(payload)
+
     all_roles = get_reaction_roles()
     role_id = None
     if "roles" in all_roles:
@@ -3630,7 +3807,11 @@ async def on_raw_reaction_add(payload):
     if not role_id:
         return
     guild = bot.get_guild(payload.guild_id)
+    if guild is None:
+        return
     member = guild.get_member(payload.user_id)
+    if member is None or member.bot:
+        return
     role = guild.get_role(int(role_id)) if str(role_id).isdigit() else None
     if role:
         await member.add_roles(role)
