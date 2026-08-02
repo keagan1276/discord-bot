@@ -1,0 +1,19 @@
+{% extends "deadside/base.html" %}
+{% block deadside_title %}Deadside Overview{% endblock %}
+{% block deadside_content %}
+<div class="deadside-overview-grid">
+  <article class="deadside-stat"><span>Status</span><strong>{{ '🟢 Enabled' if deadside.enabled else '⚪ Disabled' }}</strong></article>
+  <article class="deadside-stat"><span>Server</span><strong>{{ deadside.server_name }}</strong></article>
+  <article class="deadside-stat"><span>Provider</span><strong>{{ deadside.provider|title }}</strong></article>
+  <article class="deadside-stat"><span>Poll interval</span><strong>{{ deadside.poll_interval }} sec</strong></article>
+</div>
+<div class="deadside-panel">
+  <h2>Setup checklist</h2>
+  <div class="setup-list">
+    <a href="{{ url_for('deadside_connection') }}"><span>1</span><div><strong>Connect your server</strong><small>Add the provider log endpoint and credentials.</small></div></a>
+    <a href="{{ url_for('deadside_channels') }}"><span>2</span><div><strong>Select Discord channels</strong><small>Choose where killfeed and leaderboards are posted.</small></div></a>
+    <a href="{{ url_for('deadside_killfeed') }}"><span>3</span><div><strong>Style the killfeed</strong><small>Choose details, embed title and colour.</small></div></a>
+    <a href="{{ url_for('deadside_leaderboards') }}"><span>4</span><div><strong>Enable leaderboards</strong><small>Set ranking size and update interval.</small></div></a>
+  </div>
+</div>
+{% endblock %}

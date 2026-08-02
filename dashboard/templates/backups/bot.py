@@ -436,7 +436,6 @@ intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
 
-Thread(target=run_web, daemon=True).start()
 
 TICKET_CATEGORY_NAME = "Tickets"
 STAFF_ROLES = ["Admin", "Staff"]
@@ -493,6 +492,7 @@ def dashboard_save_feature(feature):
         return jsonify({
             "error": str(error)
         }), 500
+        Thread(target=run_web, daemon=True).start()
 # ------------------- DYNAMIC RULES SYSTEM -------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RULES_FILE = os.path.join(BASE_DIR, "rules.json")

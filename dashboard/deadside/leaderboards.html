@@ -1,0 +1,8 @@
+{% extends "deadside/base.html" %}
+{% block deadside_title %}Deadside Leaderboards{% endblock %}
+{% block deadside_content %}
+<form method="post" class="deadside-form"><div class="deadside-grid">
+<section class="deadside-panel"><h2>Leaderboard publishing</h2><label class="toggle-row"><input type="checkbox" name="leaderboard_enabled" {% if deadside.leaderboard_enabled %}checked{% endif %}><span>Enable automatic leaderboard</span></label><label>Title<input name="leaderboard_title" value="{{ deadside.leaderboard_title }}"></label><label>Top players<input type="number" min="3" max="25" name="leaderboard_limit" value="{{ deadside.leaderboard_limit }}"></label><label>Update interval (seconds)<input type="number" min="60" max="86400" name="leaderboard_interval" value="{{ deadside.leaderboard_interval }}"></label></section>
+<section class="deadside-panel"><h2>Output channel</h2><p class="deadside-help">Set the leaderboard channel on the Channels tab.</p><a class="deadside-secondary" href="{{ url_for('deadside_channels') }}">Open channel settings</a></section>
+</div><div class="deadside-actions"><button type="submit">Save leaderboard</button></div></form>
+{% endblock %}

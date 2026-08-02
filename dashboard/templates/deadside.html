@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Deadside | Pirates Bot{% endblock %}
+{% block page_title %}☠️ Deadside Killfeed{% endblock %}
+{% block description %}Connect this Discord server to a Deadside log feed and publish kills automatically.{% endblock %}
+{% block content %}
+<style>
+.deadside-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.deadside-card{background:rgba(11,16,24,.72);border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:20px}.deadside-card.full{grid-column:1/-1}.deadside-card h2{margin-top:0}.field{display:flex;flex-direction:column;gap:7px;margin:14px 0}.field input,.field select,.field textarea{width:100%;box-sizing:border-box;padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.28);color:inherit}.checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.check{display:flex;gap:9px;align-items:center}.help{opacity:.72;font-size:.92rem}.danger{color:#ffb3b3}.save-row{display:flex;justify-content:flex-end;margin-top:18px}.save-row button{padding:12px 22px;border:0;border-radius:10px;font-weight:700;cursor:pointer}@media(max-width:850px){.deadside-grid{grid-template-columns:1fr}.deadside-card.full{grid-column:auto}.checks{grid-template-columns:1fr}}
+</style>
+<form method="post">
+<div class="deadside-grid">
+<section class="deadside-card">
+<h2>Connection</h2>
+<label class="check"><input type="checkbox" name="enabled" {% if deadside.enabled %}checked{% endif %}> Enable killfeed</label>
+<div class="field"><label>Server name</label><input name="server_name" value="{{ deadside.server_name }}" required></div>
+<div class="field"><label>HTTP(S) log feed URL</label><input type="url" name="feed_url" value="{{ deadside.feed_url }}" placeholder="https://provider.example/api/server/logs"></div>
+<div class="field"><label>Authentication header</label><input name="auth_header" value="{{ deadside.auth_header }}" placeholder="Authorization"></div>
+<div class="field"><label>Authentication token/value</label><input type="password" name="auth_token" value="{{ deadside.auth_token }}" autocomplete="new-password" placeholder="Bearer ... or provider token"></div>
+<p class="help danger">Credentials are sent to the bot service. Keep Railway and dashboard access restricted.</p>
+</section>
+<section class="deadside-card">
+<h2>Discord output</h2>
+<div class="field"><label>Killfeed channel</label><select name="killfeed_channel" data-discord-select="channels" data-selected="{{ deadside.killfeed_channel }}"><option value="{{ deadside.killfeed_channel }}">Loading channels…</option></select></div>
+<div class="field"><label>Poll interval (30–900 seconds)</label><input type="number" min="30" max="900" name="poll_interval" value="{{ deadside.poll_interval }}"></div>
+<div class="field"><label>Embed title</label><input name="embed_title" value="{{ deadside.embed_title }}"></div>
+<div class="field"><label>Embed color</label><input name="embed_color" value="#{{ deadside.embed_color }}" pattern="#?[0-9A-Fa-f]{6}"></div>
+</section>
+<section class="deadside-card">
+<h2>Event details</h2>
+<div class="checks">
+<label class="check"><input type="checkbox" name="show_weapon" {% if deadside.show_weapon %}checked{% endif %}> Show weapon</label>
+<label class="check"><input type="checkbox" name="show_distance" {% if deadside.show_distance %}checked{% endif %}> Show distance</label>
+<label class="check"><input type="checkbox" name="show_headshots" {% if deadside.show_headshots %}checked{% endif %}> Show headshots</label>
+<label class="check"><input type="checkbox" name="show_suicides" {% if deadside.show_suicides %}checked{% endif %}> Show suicides</label>
+</div>
+</section>
+<section class="deadside-card">
+<h2>Supported feed shapes</h2>
+<p class="help">JSON list: <code>[{"id":"1","killer":"Jack","victim":"Bob","weapon":"AKM","distance":120}]</code></p>
+<p class="help">JSON object: <code>{"events":[...]}</code></p>
+<p class="help">Plain-text logs are parsed with the regex below.</p>
+</section>
+<section class="deadside-card full">
+<h2>Plain-text kill pattern</h2>
+<div class="field"><textarea name="kill_pattern" rows="4">{{ deadside.kill_pattern }}</textarea></div>
+<p class="help">Use named groups: <code>killer</code>, <code>victim</code>, and optionally <code>weapon</code>, <code>distance</code>, <code>headshot</code>.</p>
+</section>
+</div>
+<div class="save-row"><button type="submit">Save & test connection</button></div>
+</form>
+{% endblock %}

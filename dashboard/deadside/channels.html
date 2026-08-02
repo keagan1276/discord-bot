@@ -1,0 +1,11 @@
+{% extends "deadside/base.html" %}
+{% block deadside_title %}Deadside Channels{% endblock %}
+{% block deadside_content %}
+<form method="post" class="deadside-form"><div class="deadside-panel">
+<h2>Discord destinations</h2><p class="deadside-help">Choose where the bot sends each Deadside feed.</p>
+<div class="deadside-grid">
+{% for field,label in [('killfeed_channel','Killfeed'),('leaderboard_channel','Leaderboards'),('status_channel','Server status'),('activity_channel','Player activity'),('admin_log_channel','Admin logs')] %}
+<label>{{ label }} channel<select name="{{ field }}" data-discord-select="channels" data-selected="{{ deadside[field] }}"><option value="{{ deadside[field] }}">Loading channels…</option></select></label>
+{% endfor %}
+</div></div><div class="deadside-actions"><button type="submit">Save channels</button></div></form>
+{% endblock %}

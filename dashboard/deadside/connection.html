@@ -1,0 +1,24 @@
+{% extends "deadside/base.html" %}
+{% block deadside_title %}Deadside Connection{% endblock %}
+{% block deadside_content %}
+<form method="post" class="deadside-form">
+<div class="deadside-grid">
+<section class="deadside-panel">
+<h2>Server</h2>
+<label class="toggle-row"><input type="checkbox" name="enabled" {% if deadside.enabled %}checked{% endif %}><span>Enable Deadside integration</span></label>
+<label>Server name<input name="server_name" value="{{ deadside.server_name }}" required></label>
+<label>Hosting provider<select name="provider"><option value="gportal" {% if deadside.provider=='gportal' %}selected{% endif %}>GPORTAL</option><option value="nitrado" {% if deadside.provider=='nitrado' %}selected{% endif %}>Nitrado</option><option value="gtx" {% if deadside.provider=='gtx' %}selected{% endif %}>GTXGaming</option><option value="other" {% if deadside.provider=='other' %}selected{% endif %}>Other</option></select></label>
+<label>Connection method<select name="connection_method"><option value="http">HTTP(S) log feed</option></select></label>
+</section>
+<section class="deadside-panel">
+<h2>Log feed</h2>
+<label>HTTP(S) log URL<input type="url" name="feed_url" value="{{ deadside.feed_url }}" placeholder="https://provider.example/logs"></label>
+<label>Authentication header<input name="auth_header" value="{{ deadside.auth_header }}"></label>
+<label>Authentication token<input type="password" name="auth_token" value="{{ deadside.auth_token }}" autocomplete="new-password"></label>
+<label>Poll interval<input type="number" min="30" max="900" name="poll_interval" value="{{ deadside.poll_interval }}"></label>
+<label class="toggle-row"><input type="checkbox" name="auto_reconnect" {% if deadside.auto_reconnect %}checked{% endif %}><span>Reconnect automatically</span></label>
+</section>
+</div>
+<div class="deadside-actions"><button type="submit">Save & test connection</button></div>
+</form>
+{% endblock %}

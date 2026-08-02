@@ -645,6 +645,7 @@ REMINDERS_FILE = os.path.join(BASE_DIR,"reminders.json")
 ROLE_MANAGER_FILE = os.path.join(BASE_DIR,"role_manager.json")
 LOGS_FILE = os.path.join(BASE_DIR, "logs.json")
 PERMISSIONS_FILE = os.path.join(BASE_DIR, "permission_manager.json")
+DEADSIDE_FILE = os.path.join(BASE_DIR, "deadside.json")
 TRANSCRIPTS_FOLDER = os.path.join(BASE_DIR, "ticket_transcripts")
 
 def load_or_create_json(path, default):
@@ -2865,6 +2866,206 @@ def rules():
         "rules.html",
         rules=rules_data
     )
+
+
+
+DEADSIDE_DEFAULTS = {
+    "enabled": False,
+    "guild_id": "",
+    "server_name": "My Deadside Server",
+    "provider": "other",
+    "connection_method": "http",
+    "feed_url": "",
+    "auth_header": "Authorization",
+    "auth_token": "",
+    "poll_interval": 60,
+    "killfeed_channel": "",
+    "leaderboard_channel": "",
+    "status_channel": "",
+    "activity_channel": "",
+    "admin_log_channel": "",
+    "show_weapon": True,
+    "show_distance": True,
+    "show_headshots": True,
+    "show_suicides": True,
+    "show_ai_kills": True,
+    "show_safezone_deaths": True,
+    "show_vehicle_kills": True,
+    "embed_title": "☠️ Deadside Killfeed",
+    "embed_color": "991111",
+    "embed_footer": "",
+    "embed_thumbnail": "",
+    "leaderboard_enabled": True,
+    "leaderboard_limit": 10,
+    "leaderboard_interval": 300,
+    "leaderboard_title": "🏆 Deadside Leaderboard",
+    "track_kills": True,
+    "track_deaths": True,
+    "track_kd": True,
+    "track_longest_kill": True,
+    "track_favorite_weapon": True,
+    "track_killstreak": True,
+    "duplicate_protection": True,
+    "debug_logging": False,
+    "auto_reconnect": True,
+    "kill_pattern": r"(?P<killer>.+?)\\s+(?:killed|eliminated)\\s+(?P<victim>.+?)(?:\\s+with\\s+(?P<weapon>.+?))?(?:\\s+at\\s+(?P<distance>\\d+(?:\\.\\d+)?)m)?$",
+}
+
+
+def load_deadside_settings():
+    guild_id = str(session.get("selected_guild_id", ""))
+    if not guild_id:
+        return "", DEADSIDE_DEFAULTS.copy()
+    settings = DEADSIDE_DEFAULTS.copy()
+    settings["guild_id"] = guild_id
+    remote = bot_api_get(f"/api/dashboard/settings/deadside/{guild_id}") or {}
+    if isinstance(remote, dict) and isinstance(remote.get("settings"), dict):
+        settings.update(remote["settings"])
+    return guild_id, settings
+
+
+def save_deadside_settings(settings):
+    result = save_and_apply_feature("deadside", settings)
+    if result and result.get("ok"):
+        flash(result.get("message", "Deadside settings saved."), "success")
+    else:
+        flash(
+            f"Deadside settings were not applied: {(result or {}).get('error', 'Unknown error')}",
+            "warning",
+        )
+    return result
+
+
+def require_deadside_guild():
+    guild_id, settings = load_deadside_settings()
+    if not guild_id:
+        flash("Select a Discord server first.", "warning")
+        return None, None
+    return guild_id, settings
+
+
+@app.route("/integrations")
+def integrations():
+    return render_template("integrations.html")
+
+
+@app.route("/integrations/deadside")
+def deadside_overview():
+    guild_id, settings = require_deadside_guild()
+    if not guild_id:
+        return redirect(url_for("servers"))
+    return render_template("deadside/overview.html", deadside=settings, deadside_tab="overview")
+
+
+@app.route("/integrations/deadside/connection", methods=["GET", "POST"])
+def deadside_connection():
+    guild_id, settings = require_deadside_guild()
+    if not guild_id:
+        return redirect(url_for("servers"))
+    if request.method == "POST":
+        settings.update({
+            "enabled": "enabled" in request.form,
+            "guild_id": guild_id,
+            "server_name": request.form.get("server_name", "My Deadside Server").strip(),
+            "provider": request.form.get("provider", "other").strip(),
+            "connection_method": request.form.get("connection_method", "http").strip(),
+            "feed_url": request.form.get("feed_url", "").strip(),
+            "auth_header": request.form.get("auth_header", "Authorization").strip(),
+            "auth_token": request.form.get("auth_token", "").strip(),
+            "auto_reconnect": "auto_reconnect" in request.form,
+        })
+        try:
+            settings["poll_interval"] = max(30, min(int(request.form.get("poll_interval", "60")), 900))
+        except ValueError:
+            settings["poll_interval"] = 60
+        save_deadside_settings(settings)
+        return redirect(url_for("deadside_connection"))
+    return render_template("deadside/connection.html", deadside=settings, deadside_tab="connection")
+
+
+@app.route("/integrations/deadside/channels", methods=["GET", "POST"])
+def deadside_channels():
+    guild_id, settings = require_deadside_guild()
+    if not guild_id:
+        return redirect(url_for("servers"))
+    if request.method == "POST":
+        for key in ("killfeed_channel", "leaderboard_channel", "status_channel", "activity_channel", "admin_log_channel"):
+            settings[key] = request.form.get(key, "").strip()
+        save_deadside_settings(settings)
+        return redirect(url_for("deadside_channels"))
+    return render_template("deadside/channels.html", deadside=settings, deadside_tab="channels")
+
+
+@app.route("/integrations/deadside/killfeed", methods=["GET", "POST"])
+def deadside_killfeed():
+    guild_id, settings = require_deadside_guild()
+    if not guild_id:
+        return redirect(url_for("servers"))
+    if request.method == "POST":
+        for key in ("show_weapon", "show_distance", "show_headshots", "show_suicides", "show_ai_kills", "show_safezone_deaths", "show_vehicle_kills"):
+            settings[key] = key in request.form
+        settings["embed_title"] = request.form.get("embed_title", "☠️ Deadside Killfeed").strip()
+        settings["embed_color"] = request.form.get("embed_color", "991111").replace("#", "").strip()
+        settings["embed_footer"] = request.form.get("embed_footer", "").strip()
+        settings["embed_thumbnail"] = request.form.get("embed_thumbnail", "").strip()
+        settings["kill_pattern"] = request.form.get("kill_pattern", DEADSIDE_DEFAULTS["kill_pattern"]).strip()
+        save_deadside_settings(settings)
+        return redirect(url_for("deadside_killfeed"))
+    return render_template("deadside/killfeed.html", deadside=settings, deadside_tab="killfeed")
+
+
+@app.route("/integrations/deadside/leaderboards", methods=["GET", "POST"])
+def deadside_leaderboards():
+    guild_id, settings = require_deadside_guild()
+    if not guild_id:
+        return redirect(url_for("servers"))
+    if request.method == "POST":
+        settings["leaderboard_enabled"] = "leaderboard_enabled" in request.form
+        settings["leaderboard_title"] = request.form.get("leaderboard_title", "🏆 Deadside Leaderboard").strip()
+        try:
+            settings["leaderboard_limit"] = max(3, min(int(request.form.get("leaderboard_limit", "10")), 25))
+        except ValueError:
+            settings["leaderboard_limit"] = 10
+        try:
+            settings["leaderboard_interval"] = max(60, min(int(request.form.get("leaderboard_interval", "300")), 86400))
+        except ValueError:
+            settings["leaderboard_interval"] = 300
+        save_deadside_settings(settings)
+        return redirect(url_for("deadside_leaderboards"))
+    return render_template("deadside/leaderboards.html", deadside=settings, deadside_tab="leaderboards")
+
+
+@app.route("/integrations/deadside/statistics", methods=["GET", "POST"])
+def deadside_statistics():
+    guild_id, settings = require_deadside_guild()
+    if not guild_id:
+        return redirect(url_for("servers"))
+    if request.method == "POST":
+        for key in ("track_kills", "track_deaths", "track_kd", "track_longest_kill", "track_favorite_weapon", "track_killstreak"):
+            settings[key] = key in request.form
+        save_deadside_settings(settings)
+        return redirect(url_for("deadside_statistics"))
+    return render_template("deadside/statistics.html", deadside=settings, deadside_tab="statistics")
+
+
+@app.route("/integrations/deadside/advanced", methods=["GET", "POST"])
+def deadside_advanced():
+    guild_id, settings = require_deadside_guild()
+    if not guild_id:
+        return redirect(url_for("servers"))
+    if request.method == "POST":
+        settings["duplicate_protection"] = "duplicate_protection" in request.form
+        settings["debug_logging"] = "debug_logging" in request.form
+        settings["auto_reconnect"] = "auto_reconnect" in request.form
+        save_deadside_settings(settings)
+        return redirect(url_for("deadside_advanced"))
+    return render_template("deadside/advanced.html", deadside=settings, deadside_tab="advanced")
+
+
+@app.route("/deadside")
+def deadside_legacy_redirect():
+    return redirect(url_for("deadside_overview"))
+
 
 if __name__ == "__main__":
     print("RUNNING FILE:", os.path.abspath(__file__))

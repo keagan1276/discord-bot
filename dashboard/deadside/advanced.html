@@ -1,0 +1,5 @@
+{% extends "deadside/base.html" %}
+{% block deadside_title %}Deadside Advanced{% endblock %}
+{% block deadside_content %}
+<form method="post" class="deadside-form"><div class="deadside-panel"><h2>Advanced behaviour</h2><div class="deadside-check-grid"><label class="toggle-row"><input type="checkbox" name="auto_reconnect" {% if deadside.auto_reconnect %}checked{% endif %}><span>Reconnect automatically</span></label><label class="toggle-row"><input type="checkbox" name="duplicate_protection" {% if deadside.duplicate_protection %}checked{% endif %}><span>Duplicate protection</span></label><label class="toggle-row"><input type="checkbox" name="debug_logging" {% if deadside.debug_logging %}checked{% endif %}><span>Debug logging</span></label></div><p class="deadside-help">Debug logging may produce extra Railway log entries.</p></div><div class="deadside-actions"><button type="submit">Save advanced settings</button></div></form>
+{% endblock %}

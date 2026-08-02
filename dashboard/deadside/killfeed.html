@@ -1,0 +1,17 @@
+{% extends "deadside/base.html" %}
+{% block deadside_title %}Deadside Killfeed{% endblock %}
+{% block deadside_content %}
+<form method="post" class="deadside-form">
+<div class="deadside-grid">
+<section class="deadside-panel"><h2>Event details</h2><div class="deadside-check-grid">
+{% for field,label in [('show_weapon','Weapon'),('show_distance','Distance'),('show_headshots','Headshots'),('show_suicides','Suicides'),('show_ai_kills','AI kills'),('show_safezone_deaths','Safezone deaths'),('show_vehicle_kills','Vehicle kills')] %}<label class="toggle-row"><input type="checkbox" name="{{ field }}" {% if deadside[field] %}checked{% endif %}><span>{{ label }}</span></label>{% endfor %}
+</div></section>
+<section class="deadside-panel"><h2>Embed design</h2>
+<label>Title<input name="embed_title" value="{{ deadside.embed_title }}"></label>
+<label>Colour<input name="embed_color" value="#{{ deadside.embed_color }}" pattern="#?[0-9A-Fa-f]{6}"></label>
+<label>Footer<input name="embed_footer" value="{{ deadside.embed_footer }}"></label>
+<label>Thumbnail URL<input type="url" name="embed_thumbnail" value="{{ deadside.embed_thumbnail }}"></label>
+</section>
+<section class="deadside-panel deadside-full"><h2>Plain-text parser</h2><label>Kill log regex<textarea name="kill_pattern" rows="5">{{ deadside.kill_pattern }}</textarea></label><p class="deadside-help">Named groups: killer, victim, weapon, distance and headshot.</p></section>
+</div><div class="deadside-actions"><button type="submit">Save killfeed</button></div></form>
+{% endblock %}

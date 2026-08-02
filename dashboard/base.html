@@ -51,7 +51,7 @@
         min-height: 0 !important;
 
         overflow: hidden !important;
-        z-index: 2000;
+        z-index: 1000;
     }
 
     .app-brand {
@@ -385,6 +385,13 @@
         >
             <span class="nav-icon">🎫</span>
             <span class="nav-label">Tickets</span>
+        </a>
+        <a
+            href="/integrations"
+            class="{{ 'active' if request.path.startswith('/integrations') else '' }}"
+        >
+            <span class="nav-icon">🎮</span>
+            <span class="nav-label">Integrations</span>
         </a>
 
         <a
