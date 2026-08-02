@@ -17,6 +17,10 @@ from discord.ext import tasks
 import secrets
 import urllib.request
 import urllib.error
+import ftplib
+import fnmatch
+import io
+import posixpath
 
 app = Flask(__name__)
 print("BOT.PY IS RUNNING")
@@ -393,7 +397,7 @@ def dashboard_apply_feature(feature):
     allowed = {
         "welcome", "tickets", "moderation", "embeds",
         "reaction_roles", "rules", "settings", "economy",
-        "polls", "giveaways"
+        "polls", "giveaways", "deadside"
     }
     if feature not in allowed:
         return jsonify({"error": "Unknown feature"}), 404
@@ -463,6 +467,9 @@ REMINDERS_FILE = os.path.join(BASE_DIR, "reminders.json")
 ROLE_MANAGER_FILE = os.path.join(BASE_DIR, "role_manager.json")
 LOGS_FILE = os.path.join(BASE_DIR, "logs.json")
 PERMISSIONS_FILE = os.path.join(BASE_DIR, "permission_manager.json")
+DEADSIDE_FILE = os.path.join(BASE_DIR, "deadside.json")
+DEADSIDE_STATE_FILE = os.path.join(BASE_DIR, "deadside_state.json")
+DEADSIDE_STATS_FILE = os.path.join(BASE_DIR, "deadside_stats.json")
 TRANSCRIPTS_FOLDER = os.path.join(BASE_DIR, "ticket_transcripts")
 os.makedirs(TRANSCRIPTS_FOLDER, exist_ok=True)
 
@@ -479,7 +486,19 @@ FEATURE_FILES = {
     "economy": ECONOMY_FILE,
     "polls": POLL_FILE,
     "giveaways": GIVEAWAY_FILE,
+    "deadside": DEADSIDE_FILE,
 }
+
+
+@app.route("/api/dashboard/settings/deadside/<guild_id>", methods=["GET"])
+def dashboard_get_deadside_settings(guild_id):
+    if not dashboard_authorized():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    data = _read_config(DEADSIDE_FILE, {"servers": {}})
+    settings = dict(data.get("servers", {}).get(str(guild_id), {}) or {})
+    settings["password_configured"] = bool(settings.get("password"))
+    settings.pop("password", None)
+    return jsonify({"ok": True, "settings": settings})
 
 
 @app.route("/api/dashboard/settings/<feature>", methods=["POST"])
@@ -498,6 +517,20 @@ def dashboard_save_feature(feature):
             "ok": False,
             "error": "The request body must be a JSON object"
         }), 400
+
+    if feature == "deadside":
+        guild_id = str(payload.get("guild_id", "")).strip()
+        if not guild_id.isdigit():
+            return jsonify({"ok": False, "error": "A valid guild_id is required"}), 400
+        root = _read_config(DEADSIDE_FILE, {"servers": {}})
+        servers = root.setdefault("servers", {})
+        existing = servers.get(guild_id, {}) if isinstance(servers.get(guild_id), dict) else {}
+        submitted_password = str(payload.get("password", ""))
+        if not submitted_password and existing.get("password"):
+            payload["password"] = existing["password"]
+        payload.pop("password_configured", None)
+        servers[guild_id] = payload
+        payload = root
 
     try:
         temporary_file = f"{target_file}.tmp"
@@ -4231,7 +4264,411 @@ async def _send_or_edit(channel, config, message_key, *, content=None, embed=Non
     return message
 
 
+
+# ------------------- DEADSIDE KILLFEED -------------------
+DEADSIDE_DEFAULT_KILL_PATTERN = (
+    r"(?P<killer>.+?)\\s+(?:killed|eliminated)\\s+(?P<victim>.+?)"
+    r"(?:\\s+with\\s+(?P<weapon>.+?))?(?:\\s+at\\s+(?P<distance>\\d+(?:\\.\\d+)?)m)?$"
+)
+
+
+def _deadside_servers():
+    data = _read_config(DEADSIDE_FILE, {"servers": {}})
+    servers = data.get("servers", {})
+    return servers if isinstance(servers, dict) else {}
+
+
+def _deadside_join_path(directory, name):
+    directory = str(directory or "").strip().replace("\\", "/")
+    name = str(name or "").strip().replace("\\", "/")
+    if not directory:
+        return name
+    return posixpath.join(directory.rstrip("/"), name.lstrip("/"))
+
+
+def _deadside_log_directory(config):
+    return (
+        str(config.get("death_logs_directory", "")).strip()
+        or str(config.get("deadside_log_path", "")).strip()
+        or "."
+    )
+
+
+def _deadside_matches_log(name, config):
+    pattern = str(config.get("log_file_pattern", "*.log")).strip() or "*.log"
+    patterns = [item.strip() for item in pattern.split(",") if item.strip()]
+    return any(fnmatch.fnmatch(posixpath.basename(name).lower(), item.lower()) for item in patterns)
+
+
+def _deadside_decode(data):
+    if isinstance(data, str):
+        return data
+    for encoding in ("utf-8-sig", "utf-16", "cp1252"):
+        try:
+            return data.decode(encoding)
+        except (UnicodeDecodeError, AttributeError):
+            continue
+    return bytes(data).decode("utf-8", errors="replace")
+
+
+def _deadside_fetch_http(config):
+    url = str(config.get("feed_url", "")).strip()
+    if not url.startswith(("http://", "https://")):
+        raise RuntimeError("The feed URL must start with http:// or https://")
+    headers = {"User-Agent": "PiratesBot-Deadside/2.0"}
+    token = str(config.get("auth_token", "")).strip()
+    header_name = str(config.get("auth_header", "Authorization")).strip() or "Authorization"
+    if token:
+        headers[header_name] = token
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=20) as response:
+        return _deadside_decode(response.read())
+
+
+def _deadside_fetch_ftp(config, secure=False):
+    host = str(config.get("host", "")).strip()
+    username = str(config.get("username", "")).strip()
+    password = str(config.get("password", ""))
+    port = int(config.get("port") or (21 if not secure else 21))
+    if not host or not username or not password:
+        raise RuntimeError("Host, username and password are required for FTP/FTPS.")
+
+    client_class = ftplib.FTP_TLS if secure else ftplib.FTP
+    client = client_class(timeout=20)
+    try:
+        client.connect(host, port)
+        client.login(username, password)
+        if secure:
+            client.prot_p()
+        directory = _deadside_log_directory(config)
+        client.cwd(directory)
+
+        entries = []
+        try:
+            for name, facts in client.mlsd():
+                if facts.get("type") == "file" and _deadside_matches_log(name, config):
+                    entries.append((facts.get("modify", ""), name))
+        except (ftplib.error_perm, AttributeError):
+            for name in client.nlst():
+                if _deadside_matches_log(name, config):
+                    entries.append(("", name))
+
+        if not entries:
+            raise RuntimeError(f"No matching death log files were found in {directory!r}.")
+        entries.sort(key=lambda item: (item[0], item[1]))
+        max_files = max(1, min(int(config.get("max_log_files", 5) or 5), 25))
+        chunks = []
+        for _, name in entries[-max_files:]:
+            buffer = io.BytesIO()
+            client.retrbinary(f"RETR {name}", buffer.write)
+            chunks.append(_deadside_decode(buffer.getvalue()))
+        return "\n".join(chunks)
+    finally:
+        try:
+            client.quit()
+        except Exception:
+            try:
+                client.close()
+            except Exception:
+                pass
+
+
+def _deadside_fetch_sftp(config):
+    try:
+        import paramiko
+    except ImportError as error:
+        raise RuntimeError(
+            "SFTP requires Paramiko. Add paramiko>=3.4,<4 to requirements.txt and redeploy."
+        ) from error
+
+    host = str(config.get("host", "")).strip()
+    username = str(config.get("username", "")).strip()
+    password = str(config.get("password", ""))
+    port = int(config.get("port") or 22)
+    if not host or not username or not password:
+        raise RuntimeError("Host, username and password are required for SFTP.")
+
+    transport = paramiko.Transport((host, port))
+    transport.banner_timeout = 20
+    transport.auth_timeout = 20
+    try:
+        transport.connect(username=username, password=password)
+        sftp = paramiko.SFTPClient.from_transport(transport)
+        try:
+            directory = _deadside_log_directory(config)
+            entries = []
+            for entry in sftp.listdir_attr(directory):
+                if _deadside_matches_log(entry.filename, config):
+                    entries.append((int(entry.st_mtime or 0), entry.filename))
+            if not entries:
+                raise RuntimeError(f"No matching death log files were found in {directory!r}.")
+            entries.sort(key=lambda item: (item[0], item[1]))
+            max_files = max(1, min(int(config.get("max_log_files", 5) or 5), 25))
+            chunks = []
+            for _, name in entries[-max_files:]:
+                remote_path = _deadside_join_path(directory, name)
+                with sftp.open(remote_path, "rb") as remote_file:
+                    chunks.append(_deadside_decode(remote_file.read()))
+            return "\n".join(chunks)
+        finally:
+            sftp.close()
+    finally:
+        transport.close()
+
+
+def _deadside_fetch_sync(config):
+    protocol = str(config.get("protocol") or config.get("connection_method") or "ftp").lower().strip()
+    if protocol in {"http", "https"}:
+        return _deadside_fetch_http(config)
+    if protocol == "ftp":
+        return _deadside_fetch_ftp(config, secure=False)
+    if protocol in {"ftps", "ftp_tls", "ftp-tls"}:
+        return _deadside_fetch_ftp(config, secure=True)
+    if protocol == "sftp":
+        return _deadside_fetch_sftp(config)
+    raise RuntimeError("Protocol must be FTP, FTPS, SFTP or HTTP(S).")
+
+
+def _deadside_parse_events(raw, config):
+    events = []
+    raw = raw.strip()
+    if not raw:
+        return events
+    # JSON feeds may return a list or {events:[...]}. Field names are configurable by convention.
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        parsed = None
+    if isinstance(parsed, dict):
+        parsed = parsed.get("events", parsed.get("kills", []))
+    if isinstance(parsed, list):
+        for item in parsed:
+            if not isinstance(item, dict):
+                continue
+            killer = str(item.get("killer") or item.get("attacker") or "Unknown")
+            victim = str(item.get("victim") or item.get("killed") or "Unknown")
+            event_id = str(item.get("id") or item.get("event_id") or json.dumps(item, sort_keys=True))
+            events.append({
+                "id": event_id,
+                "killer": killer,
+                "victim": victim,
+                "weapon": str(item.get("weapon") or "Unknown"),
+                "distance": str(item.get("distance") or ""),
+                "headshot": bool(item.get("headshot", False)),
+                "raw": item,
+            })
+        return events
+
+    pattern = str(config.get("kill_pattern") or DEADSIDE_DEFAULT_KILL_PATTERN)
+    try:
+        regex = re.compile(pattern, re.IGNORECASE)
+    except re.error as error:
+        raise RuntimeError(f"Invalid kill log regex: {error}")
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        match = regex.search(line)
+        if not match:
+            continue
+        groups = match.groupdict()
+        events.append({
+            "id": line,
+            "killer": groups.get("killer") or "Unknown",
+            "victim": groups.get("victim") or "Unknown",
+            "weapon": groups.get("weapon") or "Unknown",
+            "distance": groups.get("distance") or "",
+            "headshot": bool(groups.get("headshot")),
+            "raw": line,
+        })
+    return events
+
+
+def _deadside_state():
+    data = _read_config(DEADSIDE_STATE_FILE, {"seen": {}})
+    data.setdefault("seen", {})
+    return data
+
+
+
+def _deadside_stats():
+    data = _read_config(DEADSIDE_STATS_FILE, {"servers": {}})
+    data.setdefault("servers", {})
+    return data
+
+
+def _update_deadside_stats(stats_root, guild_id, event):
+    server = stats_root["servers"].setdefault(str(guild_id), {"players": {}, "leaderboard_message_id": "", "last_leaderboard": 0})
+    players = server.setdefault("players", {})
+    killer_name = str(event.get("killer") or "Unknown")
+    victim_name = str(event.get("victim") or "Unknown")
+    weapon = str(event.get("weapon") or "Unknown")
+    try:
+        distance = float(str(event.get("distance") or "0").replace("m", "").strip() or 0)
+    except ValueError:
+        distance = 0.0
+    killer = players.setdefault(killer_name, {"kills": 0, "deaths": 0, "streak": 0, "best_streak": 0, "longest_kill": 0, "weapons": {}})
+    victim = players.setdefault(victim_name, {"kills": 0, "deaths": 0, "streak": 0, "best_streak": 0, "longest_kill": 0, "weapons": {}})
+    suicide = killer_name.casefold() == victim_name.casefold()
+    victim["deaths"] = int(victim.get("deaths", 0)) + 1
+    victim["streak"] = 0
+    if not suicide:
+        killer["kills"] = int(killer.get("kills", 0)) + 1
+        killer["streak"] = int(killer.get("streak", 0)) + 1
+        killer["best_streak"] = max(int(killer.get("best_streak", 0)), killer["streak"])
+        killer["longest_kill"] = max(float(killer.get("longest_kill", 0) or 0), distance)
+        weapons = killer.setdefault("weapons", {})
+        weapons[weapon] = int(weapons.get(weapon, 0)) + 1
+
+
+async def _publish_deadside_leaderboard(guild_id, config, stats_root, force=False):
+    if not config.get("leaderboard_enabled", True):
+        return
+    channel = _find_text_channel(config.get("leaderboard_channel"))
+    if not channel:
+        return
+    server = stats_root["servers"].setdefault(str(guild_id), {"players": {}, "leaderboard_message_id": "", "last_leaderboard": 0})
+    interval = max(60, min(int(config.get("leaderboard_interval", 300) or 300), 86400))
+    now = time.time()
+    if not force and now - float(server.get("last_leaderboard", 0) or 0) < interval:
+        return
+    limit = max(3, min(int(config.get("leaderboard_limit", 10) or 10), 25))
+    players = server.get("players", {})
+    ranked = sorted(players.items(), key=lambda item: (-int(item[1].get("kills", 0)), int(item[1].get("deaths", 0)), item[0].casefold()))[:limit]
+    lines = []
+    for index, (name, data) in enumerate(ranked, 1):
+        kills = int(data.get("kills", 0)); deaths = int(data.get("deaths", 0))
+        kd = kills / max(1, deaths)
+        lines.append(f"**{index}. {discord.utils.escape_markdown(name)}** — {kills} kills • {deaths} deaths • {kd:.2f} K/D")
+    if not lines:
+        lines = ["No kills have been recorded yet."]
+    embed = discord.Embed(
+        title=str(config.get("leaderboard_title", "🏆 Deadside Leaderboard"))[:256],
+        description="\n".join(lines)[:4096],
+        colour=parse_colour(config.get("embed_color", "991111")),
+        timestamp=datetime.now(timezone.utc),
+    )
+    embed.set_footer(text=str(config.get("server_name", "Deadside Server"))[:2048])
+    message = None
+    message_id = str(server.get("leaderboard_message_id", ""))
+    if message_id.isdigit():
+        try:
+            message = await channel.fetch_message(int(message_id))
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            message = None
+    if message:
+        await message.edit(embed=embed)
+    else:
+        message = await channel.send(embed=embed)
+        server["leaderboard_message_id"] = str(message.id)
+    server["last_leaderboard"] = now
+
+
+async def _post_deadside_event(config, event):
+    channel = _find_text_channel(config.get("killfeed_channel"))
+    if not channel:
+        return
+    killer = event["killer"]
+    victim = event["victim"]
+    if not config.get("show_suicides", True) and killer.lower() == victim.lower():
+        return
+    colour = parse_colour(config.get("embed_color", "991111"))
+    title = str(config.get("embed_title", "☠️ Deadside Killfeed"))[:256]
+    embed = discord.Embed(title=title, colour=colour, timestamp=datetime.now(timezone.utc))
+    embed.description = f"**{discord.utils.escape_markdown(killer)}** eliminated **{discord.utils.escape_markdown(victim)}**"
+    if config.get("show_weapon", True) and event.get("weapon"):
+        embed.add_field(name="Weapon", value=str(event["weapon"])[:1024], inline=True)
+    if config.get("show_distance", True) and event.get("distance"):
+        distance = str(event["distance"])
+        if not distance.lower().endswith("m"):
+            distance += " m"
+        embed.add_field(name="Distance", value=distance[:1024], inline=True)
+    if config.get("show_headshots", True) and event.get("headshot"):
+        embed.add_field(name="Headshot", value="Yes 🎯", inline=True)
+    server_name = str(config.get("server_name", "Deadside Server"))
+    footer = str(config.get("embed_footer") or server_name)
+    embed.set_footer(text=footer[:2048])
+    thumbnail = str(config.get("embed_thumbnail", "")).strip()
+    if thumbnail:
+        embed.set_thumbnail(url=thumbnail)
+    await channel.send(embed=embed)
+
+
+@tasks.loop(seconds=30)
+async def deadside_killfeed_loop():
+    servers = _deadside_servers()
+    state = _deadside_state()
+    stats_root = _deadside_stats()
+    changed = False
+    stats_changed = False
+    now = time.time()
+    for guild_id, config in servers.items():
+        if not isinstance(config, dict) or not config.get("enabled"):
+            continue
+        interval = max(30, min(int(config.get("poll_interval", 60) or 60), 900))
+        guild_state = state["seen"].setdefault(str(guild_id), {"ids": [], "last_poll": 0})
+        if now - float(guild_state.get("last_poll", 0)) < interval:
+            continue
+        guild_state["last_poll"] = now
+        changed = True
+        try:
+            raw = await asyncio.to_thread(_deadside_fetch_sync, config)
+            events = _deadside_parse_events(raw, config)
+            seen = set(guild_state.get("ids", []))
+            new_events = [event for event in events if event["id"] not in seen]
+            # On first connection, remember the existing history without flooding Discord.
+            if not seen and events:
+                new_events = []
+            for event in new_events[-25:]:
+                await _post_deadside_event(config, event)
+                _update_deadside_stats(stats_root, guild_id, event)
+                stats_changed = True
+            await _publish_deadside_leaderboard(guild_id, config, stats_root)
+            guild_state["ids"] = [event["id"] for event in events[-500:]]
+            guild_state.pop("last_error", None)
+        except Exception as error:
+            guild_state["last_error"] = str(error)[:500]
+            print(f"Deadside poll error for guild {guild_id}: {error}")
+    if changed:
+        _write_config(DEADSIDE_STATE_FILE, state)
+    if stats_changed or changed:
+        _write_config(DEADSIDE_STATS_FILE, stats_root)
+
+
+@deadside_killfeed_loop.before_loop
+async def before_deadside_killfeed_loop():
+    await bot.wait_until_ready()
+
+
 async def apply_dashboard_feature(feature):
+    if feature == "deadside":
+        servers = _deadside_servers()
+        enabled = [cfg for cfg in servers.values() if isinstance(cfg, dict) and cfg.get("enabled")]
+        for config in enabled:
+            if not _find_text_channel(config.get("killfeed_channel")):
+                raise RuntimeError("Choose a valid Deadside killfeed channel.")
+            if config.get("leaderboard_enabled", True) and not _find_text_channel(config.get("leaderboard_channel")):
+                raise RuntimeError("Choose a valid Deadside leaderboard channel or disable leaderboards.")
+            protocol = str(config.get("protocol") or config.get("connection_method") or "ftp").lower()
+            if protocol in {"ftp", "ftps", "sftp"}:
+                required = ("host", "username", "password")
+                missing = [field for field in required if not str(config.get(field, "")).strip()]
+                if missing:
+                    raise RuntimeError(f"Deadside {protocol.upper()} connection is missing: {', '.join(missing)}")
+                if not (_deadside_log_directory(config)):
+                    raise RuntimeError("Enter a Deadside log path or death logs directory.")
+            elif protocol in {"http", "https"}:
+                if not str(config.get("feed_url", "")).startswith(("http://", "https://")):
+                    raise RuntimeError("Enter a valid HTTP(S) Deadside log feed URL.")
+            else:
+                raise RuntimeError("Choose FTP, FTPS, SFTP or HTTP(S) as the protocol.")
+            # Validate connection now so dashboard reports configuration errors immediately.
+            raw = await asyncio.to_thread(_deadside_fetch_sync, config)
+            _deadside_parse_events(raw, config)
+        if enabled and not deadside_killfeed_loop.is_running():
+            deadside_killfeed_loop.start()
+        return {"message": f"Deadside killfeed configured for {len(enabled)} server(s)"}
+
     if feature == "rules":
         data = _read_config(RULES_FILE, {"menu": {}, "sections": {}})
         menu = data.setdefault("menu", {})
@@ -4533,6 +4970,9 @@ async def on_ready():
         
     if not reminder_loop.is_running():
         reminder_loop.start()
+
+    if not deadside_killfeed_loop.is_running():
+        deadside_killfeed_loop.start()
 
     print(f"✅ Logged in as {bot.user}")
     print(

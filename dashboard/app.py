@@ -2874,7 +2874,17 @@ DEADSIDE_DEFAULTS = {
     "guild_id": "",
     "server_name": "My Deadside Server",
     "provider": "other",
-    "connection_method": "http",
+    "connection_method": "ftp",
+    "protocol": "ftp",
+    "host": "",
+    "port": 21,
+    "username": "",
+    "password": "",
+    "password_configured": False,
+    "deadside_log_path": "",
+    "death_logs_directory": "",
+    "log_file_pattern": "*.log,*.txt,*.csv,*.json",
+    "max_log_files": 5,
     "feed_url": "",
     "auth_header": "Authorization",
     "auth_token": "",
@@ -2968,16 +2978,32 @@ def deadside_connection():
             "guild_id": guild_id,
             "server_name": request.form.get("server_name", "My Deadside Server").strip(),
             "provider": request.form.get("provider", "other").strip(),
-            "connection_method": request.form.get("connection_method", "http").strip(),
+            "connection_method": request.form.get("protocol", "ftp").strip().lower(),
+            "protocol": request.form.get("protocol", "ftp").strip().lower(),
+            "host": request.form.get("host", "").strip(),
+            "username": request.form.get("username", "").strip(),
+            "password": request.form.get("password", ""),
+            "deadside_log_path": request.form.get("deadside_log_path", "").strip(),
+            "death_logs_directory": request.form.get("death_logs_directory", "").strip(),
+            "log_file_pattern": request.form.get("log_file_pattern", "*.log,*.txt,*.csv,*.json").strip(),
             "feed_url": request.form.get("feed_url", "").strip(),
             "auth_header": request.form.get("auth_header", "Authorization").strip(),
             "auth_token": request.form.get("auth_token", "").strip(),
             "auto_reconnect": "auto_reconnect" in request.form,
         })
         try:
+            default_port = 22 if settings["protocol"] == "sftp" else 21
+            settings["port"] = max(1, min(int(request.form.get("port", str(default_port))), 65535))
+        except ValueError:
+            settings["port"] = 22 if settings["protocol"] == "sftp" else 21
+        try:
             settings["poll_interval"] = max(30, min(int(request.form.get("poll_interval", "60")), 900))
         except ValueError:
             settings["poll_interval"] = 60
+        try:
+            settings["max_log_files"] = max(1, min(int(request.form.get("max_log_files", "5")), 25))
+        except ValueError:
+            settings["max_log_files"] = 5
         save_deadside_settings(settings)
         return redirect(url_for("deadside_connection"))
     return render_template("deadside/connection.html", deadside=settings, deadside_tab="connection")

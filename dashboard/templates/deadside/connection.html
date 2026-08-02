@@ -1,24 +1,54 @@
 {% extends "deadside/base.html" %}
 {% block deadside_title %}Deadside Connection{% endblock %}
 {% block deadside_content %}
-<form method="post" class="deadside-form">
+<form method="post" class="deadside-form" autocomplete="off">
 <div class="deadside-grid">
 <section class="deadside-panel">
 <h2>Server</h2>
 <label class="toggle-row"><input type="checkbox" name="enabled" {% if deadside.enabled %}checked{% endif %}><span>Enable Deadside integration</span></label>
 <label>Server name<input name="server_name" value="{{ deadside.server_name }}" required></label>
 <label>Hosting provider<select name="provider"><option value="gportal" {% if deadside.provider=='gportal' %}selected{% endif %}>GPORTAL</option><option value="nitrado" {% if deadside.provider=='nitrado' %}selected{% endif %}>Nitrado</option><option value="gtx" {% if deadside.provider=='gtx' %}selected{% endif %}>GTXGaming</option><option value="other" {% if deadside.provider=='other' %}selected{% endif %}>Other</option></select></label>
-<label>Connection method<select name="connection_method"><option value="http">HTTP(S) log feed</option></select></label>
+<label>Protocol<select name="protocol" id="deadside-protocol"><option value="ftp" {% if deadside.protocol=='ftp' %}selected{% endif %}>FTP</option><option value="ftps" {% if deadside.protocol=='ftps' %}selected{% endif %}>FTPS (explicit TLS)</option><option value="sftp" {% if deadside.protocol=='sftp' %}selected{% endif %}>SFTP</option><option value="https" {% if deadside.protocol in ['http','https'] %}selected{% endif %}>HTTP(S) log URL</option></select></label>
+<label>Poll interval (seconds)<input type="number" min="30" max="900" name="poll_interval" value="{{ deadside.poll_interval }}"></label>
+<label class="toggle-row"><input type="checkbox" name="auto_reconnect" {% if deadside.auto_reconnect %}checked{% endif %}><span>Reconnect automatically</span></label>
 </section>
-<section class="deadside-panel">
-<h2>Log feed</h2>
+
+<section class="deadside-panel" id="file-connection-fields">
+<h2>GPORTAL / File access</h2>
+<p class="deadside-help">Use the FTP/SFTP details shown in your game-server control panel. The file-access port may differ from the game port.</p>
+<label>Host<input name="host" value="{{ deadside.host }}" placeholder="example.gportal.host"></label>
+<label>Port<input type="number" min="1" max="65535" name="port" value="{{ deadside.port }}" placeholder="21 or 22"></label>
+<label>Username<input name="username" value="{{ deadside.username }}" autocomplete="username"></label>
+<label>Password<input type="password" name="password" value="" autocomplete="new-password" placeholder="{% if deadside.password_configured %}Saved — leave blank to keep it{% else %}FTP/SFTP password{% endif %}"></label>
+<label>Deadside log path<input name="deadside_log_path" value="{{ deadside.deadside_log_path }}" placeholder="/Deadside/Saved/Logs"></label>
+<label>Death logs directory<input name="death_logs_directory" value="{{ deadside.death_logs_directory }}" placeholder="/Deadside/Saved/Logs/Deaths"></label>
+<label>Log filename patterns<input name="log_file_pattern" value="{{ deadside.log_file_pattern }}" placeholder="*.log,*.txt,*.csv,*.json"></label>
+<label>Newest files to read<input type="number" min="1" max="25" name="max_log_files" value="{{ deadside.max_log_files }}"></label>
+</section>
+
+<section class="deadside-panel deadside-full" id="http-connection-fields">
+<h2>HTTP(S) log feed</h2>
 <label>HTTP(S) log URL<input type="url" name="feed_url" value="{{ deadside.feed_url }}" placeholder="https://provider.example/logs"></label>
 <label>Authentication header<input name="auth_header" value="{{ deadside.auth_header }}"></label>
 <label>Authentication token<input type="password" name="auth_token" value="{{ deadside.auth_token }}" autocomplete="new-password"></label>
-<label>Poll interval<input type="number" min="30" max="900" name="poll_interval" value="{{ deadside.poll_interval }}"></label>
-<label class="toggle-row"><input type="checkbox" name="auto_reconnect" {% if deadside.auto_reconnect %}checked{% endif %}><span>Reconnect automatically</span></label>
 </section>
 </div>
 <div class="deadside-actions"><button type="submit">Save & test connection</button></div>
 </form>
+<script>
+(() => {
+  const protocol = document.getElementById('deadside-protocol');
+  const fileFields = document.getElementById('file-connection-fields');
+  const httpFields = document.getElementById('http-connection-fields');
+  function updateFields() {
+    const isHttp = protocol.value === 'https' || protocol.value === 'http';
+    fileFields.hidden = isHttp;
+    httpFields.hidden = !isHttp;
+    const port = document.querySelector('input[name="port"]');
+    if (!isHttp && !port.value) port.value = protocol.value === 'sftp' ? '22' : '21';
+  }
+  protocol.addEventListener('change', updateFields);
+  updateFields();
+})();
+</script>
 {% endblock %}
