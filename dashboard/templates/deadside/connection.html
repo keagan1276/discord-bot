@@ -4,10 +4,17 @@
 <form method="post" class="deadside-form" autocomplete="off">
 <div class="deadside-grid">
 <section class="deadside-panel">
-<h2>Server</h2>
+<h2>Server identity</h2>
 <label class="toggle-row"><input type="checkbox" name="enabled" {% if deadside.enabled %}checked{% endif %}><span>Enable Deadside integration</span></label>
 <label>Server name<input name="server_name" value="{{ deadside.server_name }}" required></label>
 <label>Hosting provider<select name="provider"><option value="gportal" {% if deadside.provider=='gportal' %}selected{% endif %}>GPORTAL</option><option value="nitrado" {% if deadside.provider=='nitrado' %}selected{% endif %}>Nitrado</option><option value="gtx" {% if deadside.provider=='gtx' %}selected{% endif %}>GTXGaming</option><option value="other" {% if deadside.provider=='other' %}selected{% endif %}>Other</option></select></label>
+<label>Server IP<input name="server_ip" value="{{ deadside.server_ip }}" placeholder="123.123.123.123"></label>
+<div class="deadside-check-grid"><label>Game port<input type="number" min="0" max="65535" name="game_port" value="{{ deadside.game_port }}"></label><label>Query port<input type="number" min="0" max="65535" name="query_port" value="{{ deadside.query_port }}"></label><label>RCON port<input type="number" min="0" max="65535" name="rcon_port" value="{{ deadside.rcon_port }}"></label></div>
+<p class="deadside-help">The server IP and game ports identify the game server. They can differ from the FTP/SFTP host and file-access port.</p>
+</section>
+
+<section class="deadside-panel">
+<h2>Connection</h2>
 <label>Protocol<select name="protocol" id="deadside-protocol"><option value="ftp" {% if deadside.protocol=='ftp' %}selected{% endif %}>FTP</option><option value="ftps" {% if deadside.protocol=='ftps' %}selected{% endif %}>FTPS (explicit TLS)</option><option value="sftp" {% if deadside.protocol=='sftp' %}selected{% endif %}>SFTP</option><option value="https" {% if deadside.protocol in ['http','https'] %}selected{% endif %}>HTTP(S) log URL</option></select></label>
 <label>Poll interval (seconds)<input type="number" min="30" max="900" name="poll_interval" value="{{ deadside.poll_interval }}"></label>
 <label class="toggle-row"><input type="checkbox" name="auto_reconnect" {% if deadside.auto_reconnect %}checked{% endif %}><span>Reconnect automatically</span></label>
@@ -15,15 +22,31 @@
 
 <section class="deadside-panel" id="file-connection-fields">
 <h2>GPORTAL / File access</h2>
-<p class="deadside-help">Use the FTP/SFTP details shown in your game-server control panel. The file-access port may differ from the game port.</p>
+<p class="deadside-help">Enter the FTP/SFTP values from the hosting panel. Do not use the public game port here.</p>
 <label>Host<input name="host" value="{{ deadside.host }}" placeholder="example.gportal.host"></label>
-<label>Port<input type="number" min="1" max="65535" name="port" value="{{ deadside.port }}" placeholder="21 or 22"></label>
+<label>File-access port<input type="number" min="1" max="65535" name="port" value="{{ deadside.port }}" placeholder="21 or 22"></label>
 <label>Username<input name="username" value="{{ deadside.username }}" autocomplete="username"></label>
 <label>Password<input type="password" name="password" value="" autocomplete="new-password" placeholder="{% if deadside.password_configured %}Saved — leave blank to keep it{% else %}FTP/SFTP password{% endif %}"></label>
 <label>Deadside log path<input name="deadside_log_path" value="{{ deadside.deadside_log_path }}" placeholder="/Deadside/Saved/Logs"></label>
 <label>Death logs directory<input name="death_logs_directory" value="{{ deadside.death_logs_directory }}" placeholder="/Deadside/Saved/Logs/Deaths"></label>
-<label>Log filename patterns<input name="log_file_pattern" value="{{ deadside.log_file_pattern }}" placeholder="*.log,*.txt,*.csv,*.json"></label>
+<label>Death log filename patterns<input name="log_file_pattern" value="{{ deadside.log_file_pattern }}" placeholder="*.log,*.txt,*.csv,*.json"></label>
 <label>Newest files to read<input type="number" min="1" max="25" name="max_log_files" value="{{ deadside.max_log_files }}"></label>
+</section>
+
+<section class="deadside-panel" id="admin-log-fields">
+<h2>Admin logs</h2>
+<label class="toggle-row"><input type="checkbox" name="admin_logs_enabled" {% if deadside.admin_logs_enabled %}checked{% endif %}><span>Enable admin-log monitoring</span></label>
+<label>Admin logs directory<input name="admin_logs_directory" value="{{ deadside.admin_logs_directory }}" placeholder="/Deadside/Saved/Logs/Admin"></label>
+<label>Admin log filename patterns<input name="admin_log_file_pattern" value="{{ deadside.admin_log_file_pattern }}" placeholder="*.log,*.txt,*.csv"></label>
+<div class="deadside-check-grid">
+<label class="toggle-row"><input type="checkbox" name="admin_show_spawns" {% if deadside.admin_show_spawns %}checked{% endif %}><span>Item spawns</span></label>
+<label class="toggle-row"><input type="checkbox" name="admin_show_vehicles" {% if deadside.admin_show_vehicles %}checked{% endif %}><span>Vehicle spawns</span></label>
+<label class="toggle-row"><input type="checkbox" name="admin_show_teleports" {% if deadside.admin_show_teleports %}checked{% endif %}><span>Teleports</span></label>
+<label class="toggle-row"><input type="checkbox" name="admin_show_kicks" {% if deadside.admin_show_kicks %}checked{% endif %}><span>Kicks</span></label>
+<label class="toggle-row"><input type="checkbox" name="admin_show_bans" {% if deadside.admin_show_bans %}checked{% endif %}><span>Bans / unbans</span></label>
+<label class="toggle-row"><input type="checkbox" name="admin_show_godmode" {% if deadside.admin_show_godmode %}checked{% endif %}><span>God-mode changes</span></label>
+</div>
+<p class="deadside-help">Only actions actually present in your host's admin logs can be posted. Choose the Discord destination under the Channels tab.</p>
 </section>
 
 <section class="deadside-panel deadside-full" id="http-connection-fields">
@@ -39,10 +62,12 @@
 (() => {
   const protocol = document.getElementById('deadside-protocol');
   const fileFields = document.getElementById('file-connection-fields');
+  const adminFields = document.getElementById('admin-log-fields');
   const httpFields = document.getElementById('http-connection-fields');
   function updateFields() {
     const isHttp = protocol.value === 'https' || protocol.value === 'http';
     fileFields.hidden = isHttp;
+    adminFields.hidden = isHttp;
     httpFields.hidden = !isHttp;
     const port = document.querySelector('input[name="port"]');
     if (!isHttp && !port.value) port.value = protocol.value === 'sftp' ? '22' : '21';

@@ -2880,9 +2880,15 @@ DEADSIDE_DEFAULTS = {
     "port": 21,
     "username": "",
     "password": "",
+    "server_ip": "",
+    "game_port": 0,
+    "query_port": 0,
+    "rcon_port": 0,
     "password_configured": False,
     "deadside_log_path": "",
     "death_logs_directory": "",
+    "admin_logs_directory": "",
+    "admin_log_file_pattern": "*.log,*.txt,*.csv",
     "log_file_pattern": "*.log,*.txt,*.csv,*.json",
     "max_log_files": 5,
     "feed_url": "",
@@ -2894,6 +2900,14 @@ DEADSIDE_DEFAULTS = {
     "status_channel": "",
     "activity_channel": "",
     "admin_log_channel": "",
+    "admin_logs_enabled": False,
+    "admin_show_spawns": True,
+    "admin_show_vehicles": True,
+    "admin_show_teleports": True,
+    "admin_show_kicks": True,
+    "admin_show_bans": True,
+    "admin_show_godmode": True,
+    "admin_show_coordinates": True,
     "show_weapon": True,
     "show_distance": True,
     "show_headshots": True,
@@ -2983,8 +2997,19 @@ def deadside_connection():
             "host": request.form.get("host", "").strip(),
             "username": request.form.get("username", "").strip(),
             "password": request.form.get("password", ""),
+            "server_ip": request.form.get("server_ip", "").strip(),
             "deadside_log_path": request.form.get("deadside_log_path", "").strip(),
             "death_logs_directory": request.form.get("death_logs_directory", "").strip(),
+            "admin_logs_directory": request.form.get("admin_logs_directory", "").strip(),
+            "admin_log_file_pattern": request.form.get("admin_log_file_pattern", "*.log,*.txt,*.csv").strip(),
+            "admin_logs_enabled": "admin_logs_enabled" in request.form,
+            "admin_show_spawns": "admin_show_spawns" in request.form,
+            "admin_show_vehicles": "admin_show_vehicles" in request.form,
+            "admin_show_teleports": "admin_show_teleports" in request.form,
+            "admin_show_kicks": "admin_show_kicks" in request.form,
+            "admin_show_bans": "admin_show_bans" in request.form,
+            "admin_show_godmode": "admin_show_godmode" in request.form,
+            "admin_show_coordinates": "admin_show_coordinates" in request.form,
             "log_file_pattern": request.form.get("log_file_pattern", "*.log,*.txt,*.csv,*.json").strip(),
             "feed_url": request.form.get("feed_url", "").strip(),
             "auth_header": request.form.get("auth_header", "Authorization").strip(),
@@ -2996,6 +3021,12 @@ def deadside_connection():
             settings["port"] = max(1, min(int(request.form.get("port", str(default_port))), 65535))
         except ValueError:
             settings["port"] = 22 if settings["protocol"] == "sftp" else 21
+        for field in ("game_port", "query_port", "rcon_port"):
+            try:
+                value = int(request.form.get(field, "0") or 0)
+                settings[field] = max(0, min(value, 65535))
+            except ValueError:
+                settings[field] = 0
         try:
             settings["poll_interval"] = max(30, min(int(request.form.get("poll_interval", "60")), 900))
         except ValueError:

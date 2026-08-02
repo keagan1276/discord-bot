@@ -19,6 +19,7 @@ import urllib.request
 import urllib.error
 import ftplib
 import fnmatch
+import hashlib
 import io
 import posixpath
 
@@ -4416,6 +4417,78 @@ def _deadside_fetch_sftp(config):
         transport.close()
 
 
+def _deadside_fetch_admin_sync(config):
+    admin_directory = str(config.get("admin_logs_directory", "")).strip()
+    if not admin_directory:
+        return ""
+    admin_config = dict(config)
+    admin_config["death_logs_directory"] = admin_directory
+    admin_config["deadside_log_path"] = admin_directory
+    admin_config["log_file_pattern"] = str(
+        config.get("admin_log_file_pattern", "*.log,*.txt,*.csv")
+    ).strip() or "*.log,*.txt,*.csv"
+    return _deadside_fetch_sync(admin_config)
+
+
+def _deadside_parse_admin_events(raw):
+    events = []
+    for line in str(raw or "").splitlines():
+        text = line.strip()
+        if not text:
+            continue
+        lower = text.lower()
+        action = None
+        if any(word in lower for word in ("spawned", "spawn item", "giveitem", "give item")):
+            action = "spawn_item"
+        if any(word in lower for word in ("spawn vehicle", "spawned vehicle", "vehicle spawned")):
+            action = "spawn_vehicle"
+        elif "teleport" in lower:
+            action = "teleport"
+        elif any(word in lower for word in (" kicked ", "kick player", "was kicked")):
+            action = "kick"
+        elif any(word in lower for word in (" banned ", "ban player", "was banned", "unban")):
+            action = "ban"
+        elif any(word in lower for word in ("god mode", "godmode", "invulnerab")):
+            action = "godmode"
+        if not action:
+            continue
+        digest = hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
+        events.append({"id": digest, "action": action, "raw": text})
+    return events
+
+
+async def _post_deadside_admin_event(config, event):
+    channel = _find_text_channel(config.get("admin_log_channel"))
+    if not channel:
+        return
+    enabled_map = {
+        "spawn_item": config.get("admin_show_spawns", True),
+        "spawn_vehicle": config.get("admin_show_vehicles", True),
+        "teleport": config.get("admin_show_teleports", True),
+        "kick": config.get("admin_show_kicks", True),
+        "ban": config.get("admin_show_bans", True),
+        "godmode": config.get("admin_show_godmode", True),
+    }
+    if not enabled_map.get(event.get("action"), True):
+        return
+    labels = {
+        "spawn_item": "📦 Item Spawn",
+        "spawn_vehicle": "🚙 Vehicle Spawn",
+        "teleport": "🧭 Teleport",
+        "kick": "👢 Player Kick",
+        "ban": "🔨 Ban Action",
+        "godmode": "🛡️ God Mode",
+    }
+    embed = discord.Embed(
+        title=labels.get(event.get("action"), "🛠️ Admin Action"),
+        description=f"```\n{str(event.get('raw', ''))[:3800]}\n```",
+        colour=discord.Color.orange(),
+        timestamp=datetime.now(timezone.utc),
+    )
+    embed.set_footer(text=str(config.get("server_name", "Deadside Server"))[:2048])
+    await channel.send(embed=embed)
+
+
 def _deadside_fetch_sync(config):
     protocol = str(config.get("protocol") or config.get("connection_method") or "ftp").lower().strip()
     if protocol in {"http", "https"}:
@@ -4606,7 +4679,7 @@ async def deadside_killfeed_loop():
         if not isinstance(config, dict) or not config.get("enabled"):
             continue
         interval = max(30, min(int(config.get("poll_interval", 60) or 60), 900))
-        guild_state = state["seen"].setdefault(str(guild_id), {"ids": [], "last_poll": 0})
+        guild_state = state["seen"].setdefault(str(guild_id), {"ids": [], "admin_ids": [], "last_poll": 0})
         if now - float(guild_state.get("last_poll", 0)) < interval:
             continue
         guild_state["last_poll"] = now
@@ -4625,6 +4698,18 @@ async def deadside_killfeed_loop():
                 stats_changed = True
             await _publish_deadside_leaderboard(guild_id, config, stats_root)
             guild_state["ids"] = [event["id"] for event in events[-500:]]
+
+            if config.get("admin_logs_enabled") and str(config.get("admin_logs_directory", "")).strip():
+                admin_raw = await asyncio.to_thread(_deadside_fetch_admin_sync, config)
+                admin_events = _deadside_parse_admin_events(admin_raw)
+                admin_seen = set(guild_state.get("admin_ids", []))
+                new_admin_events = [item for item in admin_events if item["id"] not in admin_seen]
+                if not admin_seen and admin_events:
+                    new_admin_events = []
+                for admin_event in new_admin_events[-25:]:
+                    await _post_deadside_admin_event(config, admin_event)
+                guild_state["admin_ids"] = [item["id"] for item in admin_events[-500:]]
+
             guild_state.pop("last_error", None)
         except Exception as error:
             guild_state["last_error"] = str(error)[:500]
