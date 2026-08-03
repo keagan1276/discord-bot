@@ -10,7 +10,7 @@
   <a class="{{ 'active' if deadside_tab == 'killfeed' else '' }}" href="{{ url_for('deadside_killfeed') }}">Killfeed</a>
   <a class="{{ 'active' if deadside_tab == 'factions' else '' }}" href="{{ url_for('deadside_factions') }}">Factions</a>
   <a class="{{ 'active' if deadside_tab == 'leaderboards' else '' }}" href="{{ url_for('deadside_leaderboards') }}">Leaderboards</a>
-  <a class="{{ 'active' if deadside_tab == 'statistics' else '' }}" href="{{ url_for('deadside_statistics') }}">Statistics</a>
+  <a class="{{ 'active' if deadside_tab == 'statistics' else '' }}" href="{{ url_for('deadside_statistics') }}">Players & Economy</a>
   <a class="{{ 'active' if deadside_tab == 'advanced' else '' }}" href="{{ url_for('deadside_advanced') }}">Advanced</a>
 </nav>
 <section class="deadside-page">{% block deadside_content %}{% endblock %}</section>

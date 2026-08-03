@@ -2693,3 +2693,38 @@ MOBILE SLIDE-OUT SIDEBAR
         z-index: 3002;
     }
 }
+
+
+/* ===== Deadside player/economy suite ===== */
+.ds-suite-form{
+  display:grid;
+  gap:18px;
+}
+.ds-settings-grid{
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  margin-top:15px;
+}
+.ds-suite-form code{
+  padding:2px 6px;
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:6px;
+  background:#090b0d;
+  color:#efc77e;
+}
+.ds-save-bar{
+  position:sticky;
+  bottom:14px;
+  z-index:25;
+  padding:12px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:rgba(10,12,14,.94);
+  backdrop-filter:blur(12px);
+}
+@media(max-width:1000px){
+  .ds-settings-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:700px){
+  .ds-settings-grid{grid-template-columns:1fr}
+  .ds-save-bar{position:static}
+}

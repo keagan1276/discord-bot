@@ -2930,6 +2930,30 @@ DEADSIDE_DEFAULTS = {
     "track_longest_kill": True,
     "track_favorite_weapon": True,
     "track_killstreak": True,
+    "player_linking_enabled": True,
+    "player_rewards_enabled": False,
+    "pay_per_kill": 25,
+    "minimum_kill_payment": 0,
+    "maximum_kill_payment": 250,
+    "headshot_bonus": 10,
+    "session_payment_limit": 1000,
+    "reward_session_minutes": 120,
+    "reward_notifications": False,
+    "player_bounties_enabled": True,
+    "minimum_bounty": 100,
+    "maximum_bounty": 10000,
+    "maximum_active_bounties": 3,
+    "bounty_expiry_hours": 72,
+    "refund_expired_bounties": True,
+    "killstreak_bounties_enabled": True,
+    "killstreak_bounty_start": 5,
+    "killstreak_bounty_every": 5,
+    "killstreak_bounty_reward": 250,
+    "killstreak_bounty_increase": 50,
+    "killstreak_bounty_maximum": 5000,
+    "radar_enabled": False,
+    "radar_channel": "",
+    "radar_minimum_streak": 5,
     "duplicate_protection": True,
     "debug_logging": False,
     "auto_reconnect": True,
@@ -3353,12 +3377,78 @@ def deadside_statistics():
     guild_id, settings = require_deadside_guild()
     if not guild_id:
         return redirect(url_for("servers"))
+
     if request.method == "POST":
-        for key in ("track_kills", "track_deaths", "track_kd", "track_longest_kill", "track_favorite_weapon", "track_killstreak"):
+        checkbox_keys = (
+            "track_kills",
+            "track_deaths",
+            "track_kd",
+            "track_longest_kill",
+            "track_favorite_weapon",
+            "track_killstreak",
+            "player_linking_enabled",
+            "player_rewards_enabled",
+            "reward_notifications",
+            "player_bounties_enabled",
+            "refund_expired_bounties",
+            "killstreak_bounties_enabled",
+            "radar_enabled",
+        )
+        for key in checkbox_keys:
             settings[key] = key in request.form
+
+        integer_fields = {
+            "pay_per_kill": (0, 100000),
+            "minimum_kill_payment": (0, 100000),
+            "maximum_kill_payment": (0, 100000),
+            "headshot_bonus": (0, 100000),
+            "session_payment_limit": (0, 10000000),
+            "reward_session_minutes": (5, 1440),
+            "minimum_bounty": (1, 10000000),
+            "maximum_bounty": (1, 100000000),
+            "maximum_active_bounties": (1, 25),
+            "bounty_expiry_hours": (1, 8760),
+            "killstreak_bounty_start": (2, 1000),
+            "killstreak_bounty_every": (1, 1000),
+            "killstreak_bounty_reward": (0, 10000000),
+            "killstreak_bounty_increase": (0, 10000000),
+            "killstreak_bounty_maximum": (0, 100000000),
+            "radar_minimum_streak": (1, 1000),
+        }
+        for key, (minimum, maximum) in integer_fields.items():
+            try:
+                value = int(request.form.get(key, settings.get(key, minimum)))
+            except (TypeError, ValueError):
+                value = int(settings.get(key, minimum) or minimum)
+            settings[key] = max(minimum, min(value, maximum))
+
+        settings["radar_channel"] = request.form.get(
+            "radar_channel",
+            ""
+        ).strip()
+
+        if settings["maximum_kill_payment"] < settings["minimum_kill_payment"]:
+            settings["maximum_kill_payment"] = settings["minimum_kill_payment"]
+        if settings["maximum_bounty"] < settings["minimum_bounty"]:
+            settings["maximum_bounty"] = settings["minimum_bounty"]
+        if settings["killstreak_bounty_maximum"] < settings["killstreak_bounty_reward"]:
+            settings["killstreak_bounty_maximum"] = settings["killstreak_bounty_reward"]
+
         save_deadside_settings(settings)
         return redirect(url_for("deadside_statistics"))
-    return render_template("deadside/statistics.html", deadside=settings, deadside_tab="statistics")
+
+    channels = bot_api_get(f"/api/guild/{guild_id}/channels") or []
+    text_channels = [
+        channel
+        for channel in channels
+        if channel.get("type") in {"text", "news", "forum"}
+    ]
+    return render_template(
+        "deadside/statistics.html",
+        deadside=settings,
+        channels=text_channels,
+        deadside_tab="statistics",
+    )
 
 
 @app.route("/integrations/deadside/advanced", methods=["GET", "POST"])

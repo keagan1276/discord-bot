@@ -595,6 +595,9 @@ PERMISSIONS_FILE = os.path.join(BASE_DIR, "permission_manager.json")
 DEADSIDE_FILE = os.path.join(BASE_DIR, "deadside.json")
 DEADSIDE_STATE_FILE = os.path.join(BASE_DIR, "deadside_state.json")
 DEADSIDE_STATS_FILE = os.path.join(BASE_DIR, "deadside_stats.json")
+DEADSIDE_PLAYERS_FILE = os.path.join(BASE_DIR, "deadside_players.json")
+DEADSIDE_BOUNTIES_FILE = os.path.join(BASE_DIR, "deadside_bounties.json")
+DEADSIDE_SESSIONS_FILE = os.path.join(BASE_DIR, "deadside_sessions.json")
 TRANSCRIPTS_FOLDER = os.path.join(BASE_DIR, "ticket_transcripts")
 os.makedirs(TRANSCRIPTS_FOLDER, exist_ok=True)
 
@@ -4707,18 +4710,676 @@ def _update_deadside_stats(stats_root, guild_id, event):
         distance = float(str(event.get("distance") or "0").replace("m", "").strip() or 0)
     except ValueError:
         distance = 0.0
-    killer = players.setdefault(killer_name, {"kills": 0, "deaths": 0, "streak": 0, "best_streak": 0, "longest_kill": 0, "weapons": {}})
-    victim = players.setdefault(victim_name, {"kills": 0, "deaths": 0, "streak": 0, "best_streak": 0, "longest_kill": 0, "weapons": {}})
+    killer = players.setdefault(killer_name, {"kills": 0, "deaths": 0, "headshots": 0, "streak": 0, "best_streak": 0, "longest_kill": 0, "weapons": {}, "bounties_claimed": 0, "money_earned": 0})
+    victim = players.setdefault(victim_name, {"kills": 0, "deaths": 0, "headshots": 0, "streak": 0, "best_streak": 0, "longest_kill": 0, "weapons": {}, "bounties_claimed": 0, "money_earned": 0})
     suicide = killer_name.casefold() == victim_name.casefold()
     victim["deaths"] = int(victim.get("deaths", 0)) + 1
     victim["streak"] = 0
     if not suicide:
         killer["kills"] = int(killer.get("kills", 0)) + 1
+        if event.get("headshot"):
+            killer["headshots"] = int(killer.get("headshots", 0)) + 1
         killer["streak"] = int(killer.get("streak", 0)) + 1
         killer["best_streak"] = max(int(killer.get("best_streak", 0)), killer["streak"])
         killer["longest_kill"] = max(float(killer.get("longest_kill", 0) or 0), distance)
         weapons = killer.setdefault("weapons", {})
         weapons[weapon] = int(weapons.get(weapon, 0)) + 1
+
+
+
+# ------------------- DEADSIDE PLAYER / ECONOMY SUITE -------------------
+def _deadside_player_root():
+    data = _read_config(DEADSIDE_PLAYERS_FILE, {"guilds": {}})
+    data.setdefault("guilds", {})
+    return data
+
+
+def _deadside_bounty_root():
+    data = _read_config(DEADSIDE_BOUNTIES_FILE, {"guilds": {}})
+    data.setdefault("guilds", {})
+    return data
+
+
+def _deadside_session_root():
+    data = _read_config(DEADSIDE_SESSIONS_FILE, {"guilds": {}})
+    data.setdefault("guilds", {})
+    return data
+
+
+def _deadside_config_for_guild(guild_id):
+    return _deadside_servers().get(str(guild_id), {}) or {}
+
+
+def _deadside_linked_players(guild_id):
+    root = _deadside_player_root()
+    guild_data = root["guilds"].setdefault(str(guild_id), {"users": {}})
+    guild_data.setdefault("users", {})
+    return root, guild_data
+
+
+def _deadside_find_link_by_gamertag(guild_id, gamertag):
+    _, guild_data = _deadside_linked_players(guild_id)
+    wanted = str(gamertag or "").strip().casefold()
+    for discord_id, record in guild_data.get("users", {}).items():
+        if str(record.get("gamertag", "")).strip().casefold() == wanted:
+            return str(discord_id), record
+    return None, None
+
+
+def _deadside_find_link_by_discord(guild_id, discord_id):
+    _, guild_data = _deadside_linked_players(guild_id)
+    return guild_data.get("users", {}).get(str(discord_id))
+
+
+def _economy_account(users, discord_id):
+    uid = str(discord_id)
+    users.setdefault(uid, {"wallet": 0, "bank": 0, "last_daily": None})
+    users[uid].setdefault("wallet", 0)
+    users[uid].setdefault("bank", 0)
+    users[uid].setdefault("last_daily", None)
+    return users[uid]
+
+
+def _deadside_add_wallet(discord_id, amount):
+    amount = max(0, int(amount))
+    if amount <= 0:
+        return 0
+    users = get_bank()
+    account = _economy_account(users, discord_id)
+    account["wallet"] = int(account.get("wallet", 0)) + amount
+    save_json("bank.json", users)
+    return amount
+
+
+def _deadside_take_wallet(discord_id, amount):
+    amount = max(0, int(amount))
+    users = get_bank()
+    account = _economy_account(users, discord_id)
+    wallet = int(account.get("wallet", 0))
+    if amount > wallet:
+        return False
+    account["wallet"] = wallet - amount
+    save_json("bank.json", users)
+    return True
+
+
+def _deadside_session_for(guild_id, discord_id, config):
+    root = _deadside_session_root()
+    guild_data = root["guilds"].setdefault(str(guild_id), {"users": {}})
+    users = guild_data.setdefault("users", {})
+    now = time.time()
+    session_seconds = max(
+        300,
+        int(config.get("reward_session_minutes", 120) or 120) * 60
+    )
+    session = users.setdefault(
+        str(discord_id),
+        {
+            "started_at": now,
+            "last_event_at": now,
+            "kills": 0,
+            "deaths": 0,
+            "earned": 0,
+            "bounties_claimed": 0,
+            "headshots": 0,
+        }
+    )
+    if now - float(session.get("started_at", now)) >= session_seconds:
+        session = {
+            "started_at": now,
+            "last_event_at": now,
+            "kills": 0,
+            "deaths": 0,
+            "earned": 0,
+            "bounties_claimed": 0,
+            "headshots": 0,
+        }
+        users[str(discord_id)] = session
+    return root, session
+
+
+def _deadside_active_bounties(guild_id):
+    root = _deadside_bounty_root()
+    guild_data = root["guilds"].setdefault(str(guild_id), {"items": []})
+    items = guild_data.setdefault("items", [])
+    now = time.time()
+    changed = False
+    for bounty in items:
+        if (
+            bounty.get("status") == "active"
+            and float(bounty.get("expires_at", 0) or 0) > 0
+            and float(bounty["expires_at"]) <= now
+        ):
+            bounty["status"] = "expired"
+            if bounty.get("refund_on_expiry", True):
+                _deadside_add_wallet(
+                    bounty.get("creator_id"),
+                    int(bounty.get("amount", 0))
+                )
+            changed = True
+    if changed:
+        _write_config(DEADSIDE_BOUNTIES_FILE, root)
+    return root, guild_data, [
+        item for item in items if item.get("status") == "active"
+    ]
+
+
+async def _deadside_radar_alert(guild_id, config, *, title, description, colour=0xC13B32):
+    if not config.get("radar_enabled", False):
+        return
+    channel = _find_text_channel(config.get("radar_channel"))
+    if not channel:
+        return
+    embed = discord.Embed(
+        title=title[:256],
+        description=description[:4096],
+        colour=colour,
+        timestamp=datetime.now(timezone.utc),
+    )
+    embed.set_footer(
+        text=str(config.get("server_name", "Deadside Server"))[:2048]
+    )
+    await channel.send(embed=embed)
+
+
+async def _process_deadside_rewards(guild_id, config, event, stats_root):
+    killer_name = str(event.get("killer") or "Unknown").strip()
+    victim_name = str(event.get("victim") or "Unknown").strip()
+    if not killer_name or killer_name.casefold() == victim_name.casefold():
+        return
+
+    killer_id, killer_link = _deadside_find_link_by_gamertag(
+        guild_id,
+        killer_name
+    )
+    victim_id, victim_link = _deadside_find_link_by_gamertag(
+        guild_id,
+        victim_name
+    )
+
+    # Record a linked victim death in their current session.
+    if victim_id:
+        session_root, victim_session = _deadside_session_for(
+            guild_id,
+            victim_id,
+            config
+        )
+        victim_session["deaths"] = int(victim_session.get("deaths", 0)) + 1
+        victim_session["last_event_at"] = time.time()
+        _write_config(DEADSIDE_SESSIONS_FILE, session_root)
+
+    reward_paid = 0
+    if killer_id:
+        session_root, session = _deadside_session_for(
+            guild_id,
+            killer_id,
+            config
+        )
+        session["kills"] = int(session.get("kills", 0)) + 1
+        session["last_event_at"] = time.time()
+        if event.get("headshot"):
+            session["headshots"] = int(session.get("headshots", 0)) + 1
+
+        if config.get("player_rewards_enabled", False):
+            pay_per_kill = max(
+                0,
+                int(config.get("pay_per_kill", 0) or 0)
+            )
+            min_pay = max(
+                0,
+                int(config.get("minimum_kill_payment", 0) or 0)
+            )
+            max_pay = max(
+                min_pay,
+                int(config.get("maximum_kill_payment", pay_per_kill) or pay_per_kill)
+            )
+            reward = max(min_pay, min(pay_per_kill, max_pay))
+
+            if event.get("headshot"):
+                reward += max(
+                    0,
+                    int(config.get("headshot_bonus", 0) or 0)
+                )
+
+            session_limit = max(
+                0,
+                int(config.get("session_payment_limit", 0) or 0)
+            )
+            already = int(session.get("earned", 0))
+            if session_limit:
+                reward = min(reward, max(0, session_limit - already))
+
+            if reward > 0:
+                reward_paid = _deadside_add_wallet(killer_id, reward)
+                session["earned"] = already + reward_paid
+
+        _write_config(DEADSIDE_SESSIONS_FILE, session_root)
+
+    # Claim player-created bounties.
+    bounty_root, _, active = _deadside_active_bounties(guild_id)
+    claimed = [
+        bounty
+        for bounty in active
+        if str(bounty.get("target_gamertag", "")).strip().casefold()
+        == victim_name.casefold()
+    ]
+    total_bounty = 0
+    if killer_id and claimed:
+        total_bounty = sum(int(item.get("amount", 0)) for item in claimed)
+        if total_bounty > 0:
+            _deadside_add_wallet(killer_id, total_bounty)
+            for bounty in claimed:
+                bounty["status"] = "claimed"
+                bounty["claimed_by"] = str(killer_id)
+                bounty["claimed_at"] = time.time()
+                bounty["claim_event_id"] = str(event.get("id", ""))
+            _write_config(DEADSIDE_BOUNTIES_FILE, bounty_root)
+
+            session_root, session = _deadside_session_for(
+                guild_id,
+                killer_id,
+                config
+            )
+            session["earned"] = int(session.get("earned", 0)) + total_bounty
+            session["bounties_claimed"] = (
+                int(session.get("bounties_claimed", 0)) + len(claimed)
+            )
+            _write_config(DEADSIDE_SESSIONS_FILE, session_root)
+
+            await _deadside_radar_alert(
+                guild_id,
+                config,
+                title="💰 Deadside Bounty Claimed",
+                description=(
+                    f"**{discord.utils.escape_markdown(killer_name)}** claimed "
+                    f"**${total_bounty:,}** by eliminating "
+                    f"**{discord.utils.escape_markdown(victim_name)}**."
+                ),
+                colour=0xD5A248,
+            )
+
+    # Automatic killstreak reward/bounty.
+    server = stats_root.get("servers", {}).get(str(guild_id), {})
+    killer_stats = server.get("players", {}).get(killer_name, {})
+    streak = int(killer_stats.get("streak", 0))
+    threshold = max(
+        2,
+        int(config.get("killstreak_bounty_start", 5) or 5)
+    )
+    if config.get("killstreak_bounties_enabled", False) and streak >= threshold:
+        step = max(
+            1,
+            int(config.get("killstreak_bounty_every", 5) or 5)
+        )
+        if streak == threshold or (streak - threshold) % step == 0:
+            starting = max(
+                0,
+                int(config.get("killstreak_bounty_reward", 250) or 250)
+            )
+            increase = max(
+                0,
+                int(config.get("killstreak_bounty_increase", 50) or 50)
+            )
+            cap = max(
+                starting,
+                int(config.get("killstreak_bounty_maximum", 5000) or 5000)
+            )
+            amount = min(
+                cap,
+                starting + max(0, streak - threshold) * increase
+            )
+
+            bounty_root, guild_bounties, active = _deadside_active_bounties(
+                guild_id
+            )
+            auto_id = f"auto:{killer_name.casefold()}"
+            existing = next(
+                (
+                    item for item in active
+                    if item.get("id") == auto_id
+                ),
+                None
+            )
+            if existing:
+                existing["amount"] = amount
+                existing["streak"] = streak
+                existing["updated_at"] = time.time()
+            else:
+                guild_bounties["items"].append({
+                    "id": auto_id,
+                    "creator_id": "system",
+                    "target_gamertag": killer_name,
+                    "amount": amount,
+                    "status": "active",
+                    "created_at": time.time(),
+                    "expires_at": 0,
+                    "refund_on_expiry": False,
+                    "automatic": True,
+                    "streak": streak,
+                })
+            _write_config(DEADSIDE_BOUNTIES_FILE, bounty_root)
+
+            await _deadside_radar_alert(
+                guild_id,
+                config,
+                title="🎯 Killstreak Bounty",
+                description=(
+                    f"**{discord.utils.escape_markdown(killer_name)}** reached "
+                    f"a **{streak} kill streak**.\n"
+                    f"Current bounty: **${amount:,}**"
+                ),
+                colour=0xB92E2E,
+            )
+
+    if killer_id and reward_paid and config.get("reward_notifications", False):
+        guild = bot.get_guild(int(guild_id))
+        member = guild.get_member(int(killer_id)) if guild else None
+        if member:
+            try:
+                await member.send(
+                    f"☠️ Deadside reward: **${reward_paid:,}** was added to "
+                    f"your existing economy wallet for eliminating "
+                    f"**{victim_name}**."
+                )
+            except discord.HTTPException:
+                pass
+
+
+def _deadside_profile_stats(guild_id, gamertag):
+    stats_root = _deadside_stats()
+    server = stats_root.get("servers", {}).get(str(guild_id), {})
+    players = server.get("players", {})
+    wanted = str(gamertag or "").strip().casefold()
+    for name, data in players.items():
+        if str(name).casefold() == wanted:
+            return name, data
+    return gamertag, {}
+
+
+ds_group = app_commands.Group(
+    name="ds",
+    description="Deadside player, stats, session and bounty commands"
+)
+
+
+@ds_group.command(name="link", description="Link your Discord account to a Deadside gamertag")
+@app_commands.describe(gamertag="Your exact Deadside player name")
+async def ds_link(interaction: discord.Interaction, gamertag: str):
+    if interaction.guild is None:
+        return await interaction.response.send_message(
+            "❌ Use this command in a server.",
+            ephemeral=True
+        )
+
+    gamertag = gamertag.strip()
+    if not gamertag or len(gamertag) > 80:
+        return await interaction.response.send_message(
+            "❌ Enter a valid gamertag.",
+            ephemeral=True
+        )
+
+    existing_id, _ = _deadside_find_link_by_gamertag(
+        interaction.guild_id,
+        gamertag
+    )
+    if existing_id and existing_id != str(interaction.user.id):
+        return await interaction.response.send_message(
+            "❌ That gamertag is already linked to another Discord account.",
+            ephemeral=True
+        )
+
+    root, guild_data = _deadside_linked_players(interaction.guild_id)
+    guild_data["users"][str(interaction.user.id)] = {
+        "gamertag": gamertag,
+        "linked_at": time.time(),
+        "discord_name": str(interaction.user),
+    }
+    _write_config(DEADSIDE_PLAYERS_FILE, root)
+    await interaction.response.send_message(
+        f"✅ Linked {interaction.user.mention} to Deadside gamertag "
+        f"**{discord.utils.escape_markdown(gamertag)}**."
+    )
+
+
+@ds_group.command(name="unlink", description="Remove your Deadside gamertag link")
+async def ds_unlink(interaction: discord.Interaction):
+    if interaction.guild is None:
+        return await interaction.response.send_message(
+            "❌ Use this command in a server.",
+            ephemeral=True
+        )
+    root, guild_data = _deadside_linked_players(interaction.guild_id)
+    removed = guild_data["users"].pop(str(interaction.user.id), None)
+    _write_config(DEADSIDE_PLAYERS_FILE, root)
+    await interaction.response.send_message(
+        "✅ Deadside link removed." if removed else "ℹ️ You had no linked gamertag.",
+        ephemeral=True
+    )
+
+
+async def _send_ds_stats(interaction, member=None):
+    member = member or interaction.user
+    link = _deadside_find_link_by_discord(
+        interaction.guild_id,
+        member.id
+    )
+    if not link:
+        return await interaction.response.send_message(
+            f"❌ {member.mention} has not linked a gamertag. Use `/ds link`.",
+            ephemeral=True
+        )
+
+    gamertag, data = _deadside_profile_stats(
+        interaction.guild_id,
+        link.get("gamertag")
+    )
+    kills = int(data.get("kills", 0))
+    deaths = int(data.get("deaths", 0))
+    kd = kills / max(1, deaths)
+    weapons = data.get("weapons", {})
+    favorite = max(weapons, key=weapons.get) if weapons else "None"
+
+    users = get_bank()
+    economy = _economy_account(users, member.id)
+
+    embed = discord.Embed(
+        title=f"☠️ Deadside Stats — {gamertag}",
+        colour=0x991111,
+        timestamp=datetime.now(timezone.utc),
+    )
+    embed.add_field(name="Kills", value=f"{kills:,}")
+    embed.add_field(name="Deaths", value=f"{deaths:,}")
+    embed.add_field(name="K/D", value=f"{kd:.2f}")
+    embed.add_field(name="Current streak", value=str(data.get("streak", 0)))
+    embed.add_field(name="Best streak", value=str(data.get("best_streak", 0)))
+    embed.add_field(
+        name="Longest kill",
+        value=f"{float(data.get('longest_kill', 0) or 0):.1f} m"
+    )
+    embed.add_field(name="Favourite weapon", value=favorite)
+    embed.add_field(
+        name="Existing economy",
+        value=(
+            f"Wallet: **${int(economy.get('wallet', 0)):,}**\n"
+            f"Bank: **${int(economy.get('bank', 0)):,}**"
+        ),
+        inline=False
+    )
+    await interaction.response.send_message(embed=embed)
+
+
+@ds_group.command(name="stats", description="Show linked Deadside player statistics")
+@app_commands.describe(member="Optional linked Discord member")
+async def ds_stats(
+    interaction: discord.Interaction,
+    member: discord.Member | None = None
+):
+    await _send_ds_stats(interaction, member)
+
+
+@ds_group.command(name="session", description="Show your current Deadside earning session")
+async def ds_session(interaction: discord.Interaction):
+    if interaction.guild is None:
+        return await interaction.response.send_message(
+            "❌ Use this command in a server.",
+            ephemeral=True
+        )
+    config = _deadside_config_for_guild(interaction.guild_id)
+    root, session = _deadside_session_for(
+        interaction.guild_id,
+        interaction.user.id,
+        config
+    )
+    started = int(float(session.get("started_at", time.time())))
+    embed = discord.Embed(
+        title="⏱️ Deadside Session",
+        colour=0xD5A248,
+    )
+    embed.description = (
+        f"Started: <t:{started}:R>\n"
+        f"Kills: **{int(session.get('kills', 0))}**\n"
+        f"Deaths: **{int(session.get('deaths', 0))}**\n"
+        f"Headshots: **{int(session.get('headshots', 0))}**\n"
+        f"Bounties claimed: **{int(session.get('bounties_claimed', 0))}**\n"
+        f"Paid into existing wallet: "
+        f"**${int(session.get('earned', 0)):,}**"
+    )
+    await interaction.response.send_message(embed=embed)
+
+
+@ds_group.command(name="leaderboard", description="Show the Deadside kill leaderboard")
+async def ds_leaderboard(interaction: discord.Interaction):
+    stats_root = _deadside_stats()
+    server = stats_root.get("servers", {}).get(str(interaction.guild_id), {})
+    players = server.get("players", {})
+    ranked = sorted(
+        players.items(),
+        key=lambda item: (
+            -int(item[1].get("kills", 0)),
+            int(item[1].get("deaths", 0)),
+        )
+    )[:10]
+    lines = []
+    for index, (name, data) in enumerate(ranked, 1):
+        kills = int(data.get("kills", 0))
+        deaths = int(data.get("deaths", 0))
+        lines.append(
+            f"**{index}. {discord.utils.escape_markdown(name)}** — "
+            f"{kills} kills • {deaths} deaths • "
+            f"{kills / max(1, deaths):.2f} K/D"
+        )
+    await interaction.response.send_message(
+        embed=discord.Embed(
+            title="🏆 Deadside Leaderboard",
+            description="\n".join(lines) if lines else "No statistics yet.",
+            colour=0x991111,
+        )
+    )
+
+
+@ds_group.command(name="bounty_create", description="Place a bounty using your existing wallet")
+@app_commands.describe(gamertag="Target Deadside gamertag", amount="Bounty amount")
+async def ds_bounty_create(
+    interaction: discord.Interaction,
+    gamertag: str,
+    amount: int
+):
+    config = _deadside_config_for_guild(interaction.guild_id)
+    if not config.get("player_bounties_enabled", False):
+        return await interaction.response.send_message(
+            "❌ Player bounties are disabled.",
+            ephemeral=True
+        )
+
+    minimum = max(1, int(config.get("minimum_bounty", 100) or 100))
+    maximum = max(minimum, int(config.get("maximum_bounty", 10000) or 10000))
+    if amount < minimum or amount > maximum:
+        return await interaction.response.send_message(
+            f"❌ Bounties must be between **${minimum:,}** and **${maximum:,}**.",
+            ephemeral=True
+        )
+
+    _, _, active = _deadside_active_bounties(interaction.guild_id)
+    user_active = [
+        item for item in active
+        if str(item.get("creator_id")) == str(interaction.user.id)
+    ]
+    max_active = max(
+        1,
+        int(config.get("maximum_active_bounties", 3) or 3)
+    )
+    if len(user_active) >= max_active:
+        return await interaction.response.send_message(
+            f"❌ You already have {max_active} active bounties.",
+            ephemeral=True
+        )
+
+    if not _deadside_take_wallet(interaction.user.id, amount):
+        return await interaction.response.send_message(
+            "❌ You do not have enough money in your existing wallet.",
+            ephemeral=True
+        )
+
+    root, guild_data, _ = _deadside_active_bounties(interaction.guild_id)
+    expiry_hours = max(
+        1,
+        int(config.get("bounty_expiry_hours", 72) or 72)
+    )
+    bounty = {
+        "id": secrets.token_urlsafe(8),
+        "creator_id": str(interaction.user.id),
+        "target_gamertag": gamertag.strip(),
+        "amount": int(amount),
+        "status": "active",
+        "created_at": time.time(),
+        "expires_at": time.time() + expiry_hours * 3600,
+        "refund_on_expiry": config.get("refund_expired_bounties", True),
+        "automatic": False,
+    }
+    guild_data["items"].append(bounty)
+    _write_config(DEADSIDE_BOUNTIES_FILE, root)
+
+    await interaction.response.send_message(
+        f"🎯 Bounty placed on **{discord.utils.escape_markdown(gamertag)}** "
+        f"for **${amount:,}** from your existing wallet."
+    )
+
+
+@ds_group.command(name="bounties", description="List active Deadside bounties")
+async def ds_bounties(interaction: discord.Interaction):
+    _, _, active = _deadside_active_bounties(interaction.guild_id)
+    lines = [
+        f"🎯 **{discord.utils.escape_markdown(str(item.get('target_gamertag')))}** "
+        f"— **${int(item.get('amount', 0)):,}**"
+        for item in sorted(
+            active,
+            key=lambda item: -int(item.get("amount", 0))
+        )[:20]
+    ]
+    await interaction.response.send_message(
+        embed=discord.Embed(
+            title="💰 Active Deadside Bounties",
+            description="\n".join(lines) if lines else "No active bounties.",
+            colour=0xD5A248,
+        )
+    )
+
+
+@tree.command(name="dsstats", description="Show your linked Deadside statistics")
+@app_commands.describe(member="Optional linked Discord member")
+async def deadside_stats_alias(
+    interaction: discord.Interaction,
+    member: discord.Member | None = None
+):
+    await _send_ds_stats(interaction, member)
+
+
+@tree.command(name="session", description="Show your current Deadside earning session")
+async def deadside_session_alias(interaction: discord.Interaction):
+    await ds_session.callback(interaction)
+
+
+tree.add_command(ds_group)
 
 
 async def _publish_deadside_leaderboard(guild_id, config, stats_root, force=False):
@@ -4822,6 +5483,12 @@ async def deadside_killfeed_loop():
             for event in new_events[-25:]:
                 await _post_deadside_event(config, event)
                 _update_deadside_stats(stats_root, guild_id, event)
+                await _process_deadside_rewards(
+                    guild_id,
+                    config,
+                    event,
+                    stats_root
+                )
                 stats_changed = True
             await _publish_deadside_leaderboard(guild_id, config, stats_root)
             guild_state["ids"] = [event["id"] for event in events[-500:]]

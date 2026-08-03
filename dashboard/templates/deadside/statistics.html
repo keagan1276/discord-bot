@@ -1,7 +1,100 @@
 {% extends "deadside/base.html" %}
-{% block deadside_title %}Deadside Statistics{% endblock %}
+{% block deadside_title %}Deadside Players, Economy & Bounties{% endblock %}
 {% block deadside_content %}
-<form method="post" class="deadside-form"><div class="deadside-panel"><h2>Tracked player statistics</h2><div class="deadside-check-grid">
-{% for field,label in [('track_kills','Kills'),('track_deaths','Deaths'),('track_kd','K/D ratio'),('track_longest_kill','Longest kill'),('track_favorite_weapon','Favourite weapon'),('track_killstreak','Kill streak')] %}<label class="toggle-row"><input type="checkbox" name="{{ field }}" {% if deadside[field] %}checked{% endif %}><span>{{ label }}</span></label>{% endfor %}
-</div></div><div class="deadside-actions"><button type="submit">Save statistics</button></div></form>
+
+<form method="post" class="deadside-form ds-suite-form">
+  <section class="deadside-panel">
+    <div class="panel-heading">
+      <div><span class="panel-icon">👤</span><h2>Player linking & statistics</h2></div>
+    </div>
+    <div class="deadside-check-grid">
+      <label class="toggle-row"><input type="checkbox" name="player_linking_enabled" {% if deadside.player_linking_enabled %}checked{% endif %}><span>Enable Discord ↔ Deadside gamertag linking</span></label>
+      {% for field,label in [
+        ('track_kills','Kills'),
+        ('track_deaths','Deaths'),
+        ('track_kd','K/D ratio'),
+        ('track_longest_kill','Longest kill'),
+        ('track_favorite_weapon','Favourite weapon'),
+        ('track_killstreak','Kill streak')
+      ] %}
+      <label class="toggle-row"><input type="checkbox" name="{{ field }}" {% if deadside[field] %}checked{% endif %}><span>{{ label }}</span></label>
+      {% endfor %}
+    </div>
+    <p class="deadside-help">
+      Player commands: <code>/ds link</code>, <code>/ds stats</code>,
+      <code>/ds session</code>, <code>/ds leaderboard</code>,
+      <code>/dsstats</code> and <code>/session</code>.
+    </p>
+  </section>
+
+  <section class="deadside-panel">
+    <div class="panel-heading">
+      <div><span class="panel-icon">💰</span><h2>Existing economy rewards</h2></div>
+    </div>
+    <label class="toggle-row"><input type="checkbox" name="player_rewards_enabled" {% if deadside.player_rewards_enabled %}checked{% endif %}><span>Enable pay-per-kill using the existing economy wallet</span></label>
+    <div class="deadside-grid ds-settings-grid">
+      <label>Pay per kill<input type="number" min="0" name="pay_per_kill" value="{{ deadside.pay_per_kill }}"></label>
+      <label>Minimum kill payment<input type="number" min="0" name="minimum_kill_payment" value="{{ deadside.minimum_kill_payment }}"></label>
+      <label>Maximum kill payment<input type="number" min="0" name="maximum_kill_payment" value="{{ deadside.maximum_kill_payment }}"></label>
+      <label>Headshot bonus<input type="number" min="0" name="headshot_bonus" value="{{ deadside.headshot_bonus }}"></label>
+      <label>Session earning limit<input type="number" min="0" name="session_payment_limit" value="{{ deadside.session_payment_limit }}"></label>
+      <label>Session length (minutes)<input type="number" min="5" max="1440" name="reward_session_minutes" value="{{ deadside.reward_session_minutes }}"></label>
+    </div>
+    <label class="toggle-row"><input type="checkbox" name="reward_notifications" {% if deadside.reward_notifications %}checked{% endif %}><span>DM linked players when a kill reward is paid</span></label>
+    <p class="deadside-help">All rewards are added to the same wallet used by <code>/balance</code>, <code>/deposit</code>, <code>/withdraw</code> and your current economy commands.</p>
+  </section>
+
+  <section class="deadside-panel">
+    <div class="panel-heading">
+      <div><span class="panel-icon">🎯</span><h2>Player bounties</h2></div>
+    </div>
+    <label class="toggle-row"><input type="checkbox" name="player_bounties_enabled" {% if deadside.player_bounties_enabled %}checked{% endif %}><span>Enable player-created bounties</span></label>
+    <div class="deadside-grid ds-settings-grid">
+      <label>Minimum bounty<input type="number" min="1" name="minimum_bounty" value="{{ deadside.minimum_bounty }}"></label>
+      <label>Maximum bounty<input type="number" min="1" name="maximum_bounty" value="{{ deadside.maximum_bounty }}"></label>
+      <label>Maximum active per user<input type="number" min="1" max="25" name="maximum_active_bounties" value="{{ deadside.maximum_active_bounties }}"></label>
+      <label>Expiry (hours)<input type="number" min="1" name="bounty_expiry_hours" value="{{ deadside.bounty_expiry_hours }}"></label>
+    </div>
+    <label class="toggle-row"><input type="checkbox" name="refund_expired_bounties" {% if deadside.refund_expired_bounties %}checked{% endif %}><span>Refund expired player bounties to the creator's existing wallet</span></label>
+    <p class="deadside-help">Commands: <code>/ds bounty_create</code> and <code>/ds bounties</code>.</p>
+  </section>
+
+  <section class="deadside-panel">
+    <div class="panel-heading">
+      <div><span class="panel-icon">🔥</span><h2>Killstreak bounties</h2></div>
+    </div>
+    <label class="toggle-row"><input type="checkbox" name="killstreak_bounties_enabled" {% if deadside.killstreak_bounties_enabled %}checked{% endif %}><span>Enable automatic killstreak bounties</span></label>
+    <div class="deadside-grid ds-settings-grid">
+      <label>Start at streak<input type="number" min="2" name="killstreak_bounty_start" value="{{ deadside.killstreak_bounty_start }}"></label>
+      <label>Increase every X kills<input type="number" min="1" name="killstreak_bounty_every" value="{{ deadside.killstreak_bounty_every }}"></label>
+      <label>Starting reward<input type="number" min="0" name="killstreak_bounty_reward" value="{{ deadside.killstreak_bounty_reward }}"></label>
+      <label>Increase per kill<input type="number" min="0" name="killstreak_bounty_increase" value="{{ deadside.killstreak_bounty_increase }}"></label>
+      <label>Maximum automatic bounty<input type="number" min="0" name="killstreak_bounty_maximum" value="{{ deadside.killstreak_bounty_maximum }}"></label>
+    </div>
+  </section>
+
+  <section class="deadside-panel">
+    <div class="panel-heading">
+      <div><span class="panel-icon">📡</span><h2>Radar & live alerts</h2></div>
+    </div>
+    <label class="toggle-row"><input type="checkbox" name="radar_enabled" {% if deadside.radar_enabled %}checked{% endif %}><span>Enable bounty and killstreak radar alerts</span></label>
+    <div class="deadside-grid ds-settings-grid">
+      <label>Radar channel
+        <select name="radar_channel">
+          <option value="">Choose channel</option>
+          {% for channel in channels %}
+          <option value="{{ channel.id }}" {% if deadside.radar_channel|string == channel.id|string %}selected{% endif %}>#{{ channel.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Minimum streak for alert<input type="number" min="1" name="radar_minimum_streak" value="{{ deadside.radar_minimum_streak }}"></label>
+    </div>
+    <p class="deadside-help">Radar currently posts bounty claims and automatic killstreak-bounty alerts. Existing admin-log controls remain under Channels and Connection.</p>
+  </section>
+
+  <div class="deadside-actions ds-save-bar">
+    <button type="submit">Save player, economy, bounty and radar settings</button>
+  </div>
+</form>
+
 {% endblock %}
