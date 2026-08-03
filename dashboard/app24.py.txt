@@ -2746,9 +2746,9 @@ def rules():
 
             if section_key and section_key not in sections:
                 sections[section_key] = {
-                    "button_label": "",
+                    "button_label": "New Rules",
                     "button_emoji": "📜",
-                    "title": "",
+                    "title": "📜 New Rules",
                     "description": "Add your rules here.",
                     "color": "991111",
                     "image_url": "",
