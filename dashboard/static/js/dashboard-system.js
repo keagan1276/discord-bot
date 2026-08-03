@@ -2,9 +2,7 @@
     const sidebar = document.querySelector(".app-sidebar");
     const menu = document.querySelector(".mobile-menu");
 
-    if (!sidebar || !menu) {
-        return;
-    }
+    if (!sidebar || !menu) return;
 
     let backdrop = document.querySelector(".sidebar-backdrop");
 
@@ -14,67 +12,57 @@
         document.body.appendChild(backdrop);
     }
 
-    function closeSidebar() {
+    const closeSidebar = () => {
         sidebar.classList.remove("open");
         backdrop.classList.remove("show");
         document.body.classList.remove("sidebar-open");
         menu.setAttribute("aria-expanded", "false");
-    }
+    };
 
-    function openSidebar() {
+    const openSidebar = () => {
         sidebar.classList.add("open");
         backdrop.classList.add("show");
         document.body.classList.add("sidebar-open");
         menu.setAttribute("aria-expanded", "true");
-    }
+    };
 
     menu.setAttribute("aria-expanded", "false");
 
     menu.addEventListener("click", () => {
-        if (sidebar.classList.contains("open")) {
-            closeSidebar();
-        } else {
-            openSidebar();
-        }
+        sidebar.classList.contains("open") ? closeSidebar() : openSidebar();
     });
 
     backdrop.addEventListener("click", closeSidebar);
 
-    document.addEventListener("keydown", event => {
-        if (event.key === "Escape") {
-            closeSidebar();
-        }
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") closeSidebar();
     });
 
-    sidebar.querySelectorAll("a").forEach(link => {
-        link.addEventListener("click", closeSidebar);
+    sidebar.querySelectorAll("a").forEach((link) => {
+        link.addEventListener("click", () => {
+            if (window.matchMedia("(max-width: 760px)").matches) closeSidebar();
+        });
     });
 
     window.addEventListener("resize", () => {
-        if (window.innerWidth > 760) {
-            closeSidebar();
-        }
+        if (window.innerWidth > 760) closeSidebar();
     });
 
-    document.querySelectorAll("form").forEach(form => {
+    document.querySelectorAll("form").forEach((form) => {
         let changed = false;
         const saveText = form.querySelector(".save-bar span");
 
         form.addEventListener("input", () => {
             changed = true;
-            if (saveText) {
-                saveText.textContent = "You have unsaved changes.";
-            }
+            if (saveText) saveText.textContent = "You have unsaved changes.";
         });
 
         form.addEventListener("submit", () => {
             changed = false;
         });
 
-        window.addEventListener("beforeunload", event => {
-            if (!changed) {
-                return;
-            }
+        window.addEventListener("beforeunload", (event) => {
+            if (!changed) return;
             event.preventDefault();
             event.returnValue = "";
         });

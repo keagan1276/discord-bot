@@ -2508,334 +2508,188 @@ MOBILE SLIDE-OUT SIDEBAR
 @media(max-width:900px){.deadside-overview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:700px){.deadside-grid,.deadside-check-grid,.deadside-overview-grid{grid-template-columns:1fr}.deadside-full{grid-column:auto}.deadside-panel{padding:16px}.deadside-tabs{margin-left:-4px;margin-right:-4px}}
 
 
-/* ===== Deadside Factions ===== */
-.faction-layout{
-  display:grid;
-  grid-template-columns:minmax(320px,.85fr) minmax(0,1.35fr);
-  gap:18px;
-  align-items:start;
-}
-.faction-editor-panel{position:sticky;top:86px}
-.faction-flag-grid{
-  display:grid;
-  grid-template-columns:repeat(auto-fill,minmax(92px,1fr));
-  gap:10px;
-  max-height:360px;
-  overflow-y:auto;
-  padding:4px;
-}
-.faction-flag-option{
-  position:relative;
-  display:flex!important;
-  flex-direction:column!important;
-  align-items:center;
-  justify-content:center;
-  gap:6px!important;
-  min-height:86px;
-  margin:0!important;
-  padding:10px!important;
-  border:1px solid var(--line);
-  border-radius:12px;
-  background:#0d1013;
-  cursor:pointer;
-  text-align:center;
-}
-.faction-flag-option input{position:absolute;opacity:0;pointer-events:none}
-.faction-flag-option:has(input:checked){
-  border-color:rgba(213,162,72,.8);
-  box-shadow:0 0 0 2px rgba(213,162,72,.15);
-  background:rgba(213,162,72,.08);
-}
-.faction-flag-emoji{font-size:28px;line-height:1}
-.faction-flag-option small{color:var(--muted);font-size:9px}
-.faction-form-actions,.faction-card-actions{display:flex;gap:10px;margin-top:18px}
-.faction-card-grid{display:grid;gap:14px}
-.faction-card{
-  padding:17px;
-  border:1px solid var(--line);
-  border-radius:14px;
-  background:#0d1013;
-}
-.faction-card-header{display:flex;align-items:center;gap:12px}
-.faction-card-header h3{margin:0 0 4px}
-.faction-card-header small{color:var(--muted)}
-.faction-card-flag{
-  display:grid;
-  place-items:center;
-  flex:0 0 54px;
-  width:54px;
-  height:54px;
-  overflow:hidden;
-  border:1px solid var(--line);
-  border-radius:12px;
-  background:#161a1e;
-}
-.faction-card-flag span{font-size:30px}
-.faction-card-flag img{width:100%;height:100%;object-fit:cover}
-.faction-status{
-  margin-left:auto;
-  padding:5px 9px;
-  border-radius:999px;
-  font-size:9px;
-  font-weight:800;
-}
-.faction-status.enabled{background:rgba(54,207,104,.14);color:#8ef0aa}
-.faction-status.disabled{background:rgba(185,46,46,.16);color:#ff9c9c}
-.faction-meta{
-  display:grid;
-  grid-template-columns:repeat(3,minmax(0,1fr));
-  gap:10px;
-  margin:15px 0 0;
-}
-.faction-meta div{
-  padding:10px;
-  border-radius:10px;
-  background:rgba(255,255,255,.025);
-}
-.faction-meta dt{color:var(--muted);font-size:9px}
-.faction-meta dd{margin:5px 0 0;font-size:11px;font-weight:700}
-.faction-description{margin:14px 0 0;color:#c4c9cf;line-height:1.55}
-.faction-card-actions{justify-content:flex-end}
-.faction-card-actions form{margin:0}
-#faction-members{min-height:220px}
-@media(max-width:980px){
-  .faction-layout{grid-template-columns:1fr}
-  .faction-editor-panel{position:static}
-}
-@media(max-width:700px){
-  .faction-meta{grid-template-columns:1fr}
-  .faction-card-header{align-items:flex-start;flex-wrap:wrap}
-  .faction-status{margin-left:0}
-  .faction-form-actions,.faction-card-actions{flex-direction:column}
-  .faction-card-actions form,.faction-card-actions button{width:100%}
+/* ==========================================================
+   FINAL MOBILE SIDEBAR FIX
+   ========================================================== */
+@media (max-width: 760px) {
+    html, body {
+        width: 100%;
+        overflow-x: hidden;
+    }
+
+    body.sidebar-open {
+        overflow: hidden;
+        touch-action: none;
+    }
+
+    .app-sidebar {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        bottom: 0 !important;
+        right: auto !important;
+
+        display: flex !important;
+        flex-direction: column !important;
+
+        width: min(86vw, 320px) !important;
+        max-width: 320px !important;
+        height: 100dvh !important;
+        min-height: 0 !important;
+
+        overflow: hidden !important;
+        overscroll-behavior: contain;
+
+        z-index: 2001 !important;
+        transform: translateX(-100%) !important;
+        transition: transform .25s ease !important;
+        will-change: transform;
+    }
+
+    .app-sidebar.open {
+        transform: translateX(0) !important;
+    }
+
+    .app-nav {
+        flex: 1 1 auto !important;
+        min-height: 0 !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        overscroll-behavior-y: contain;
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-y;
+        padding-bottom: 32px !important;
+    }
+
+    .sidebar-footer {
+        flex: 0 0 auto !important;
+        max-height: 34vh !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .sidebar-backdrop {
+        position: fixed !important;
+        inset: 0 !important;
+        z-index: 2000 !important;
+        background: rgba(0,0,0,.55) !important;
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transition: opacity .25s ease, visibility .25s ease;
+    }
+
+    .sidebar-backdrop.show {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+    }
+
+    .deadside-tabs {
+        display: flex !important;
+        gap: 8px !important;
+        max-width: 100%;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        white-space: nowrap !important;
+        overscroll-behavior-x: contain;
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-x;
+        scrollbar-width: thin;
+        padding-bottom: 10px !important;
+    }
+
+    .deadside-tabs a {
+        flex: 0 0 auto !important;
+    }
 }
 
 
-/* ===== Searchable faction members and Deadside image flags ===== */
-.member-picker{position:relative}
-.member-suggestions{
-  position:absolute;
-  z-index:90;
-  left:0;
-  right:0;
-  max-height:280px;
-  overflow-y:auto;
-  margin-top:4px;
-  border:1px solid var(--line);
-  border-radius:12px;
-  background:#101419;
-  box-shadow:0 18px 45px rgba(0,0,0,.45);
-}
-.member-suggestions:empty{display:none}
-.member-suggestion{
-  display:flex;
-  align-items:center;
-  gap:10px;
-  width:100%;
-  padding:10px 12px;
-  border:0;
-  border-bottom:1px solid var(--line);
-  background:transparent;
-  color:var(--text);
-  text-align:left;
-  cursor:pointer;
-}
-.member-suggestion:hover{background:rgba(255,255,255,.055)}
-.member-suggestion img,.member-chip img{
-  width:34px;
-  height:34px;
-  border-radius:50%;
-  object-fit:cover;
-}
-.member-suggestion span{display:flex;flex-direction:column}
-.member-suggestion small{color:var(--muted);font-size:10px}
-.member-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:9px}
-.member-chip{
-  display:inline-flex;
-  align-items:center;
-  gap:7px;
-  width:auto!important;
-  min-height:0!important;
-  padding:6px 9px;
-  border:1px solid rgba(213,162,72,.22);
-  border-radius:999px;
-  background:#19150d;
-  color:#f3d49b;
-  cursor:pointer;
-}
-.member-chip img{width:24px;height:24px}
-.member-chip b{font-size:15px}
-.deadside-image-flag-grid{
-  display:grid;
-  grid-template-columns:repeat(3,minmax(0,1fr));
-  gap:10px;
-  max-height:500px;
-  overflow-y:auto;
-  padding:4px;
-}
-.deadside-image-flag{
-  position:relative;
-  display:block!important;
-  margin:0!important;
-  cursor:pointer;
-}
-.deadside-image-flag input{
-  position:absolute;
-  opacity:0;
-  pointer-events:none;
-}
-.deadside-image-flag img{
-  display:block;
-  width:100%;
-  aspect-ratio:18/11;
-  object-fit:cover;
-  border:2px solid transparent;
-  border-radius:10px;
-  background:#0a0c0e;
-  transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease;
-}
-.deadside-image-flag:hover img{transform:translateY(-2px)}
-.deadside-image-flag:has(input:checked) img{
-  border-color:#d5a248;
-  box-shadow:0 0 0 3px rgba(213,162,72,.18);
-}
-.faction-card-flag{width:86px;flex-basis:86px}
-.faction-card-flag img{object-fit:cover}
-@media(max-width:700px){
-  .deadside-image-flag-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-}
+/* ==========================================================
+   MOBILE SIDEBAR SCROLL FIX — FINAL OVERRIDE
+   ========================================================== */
+@media (max-width: 760px) {
+    body.sidebar-open {
+        overflow: hidden !important;
+        touch-action: auto !important;
+    }
 
+    .app-sidebar {
+        position: fixed !important;
+        inset: 0 auto 0 0 !important;
 
-/* ===== Deadside faction editor polish ===== */
-.faction-editor-panel{
-  position:static;
-}
-.faction-layout{
-  grid-template-columns:minmax(0,1fr);
-}
-.faction-section-heading{
-  display:flex;
-  align-items:flex-start;
-  justify-content:space-between;
-  gap:18px;
-  margin-bottom:16px;
-}
-.faction-section-heading h3{
-  margin:0 0 6px;
-  font-size:15px;
-  text-transform:uppercase;
-  letter-spacing:.04em;
-}
-.faction-section-heading p{
-  margin:0;
-  color:var(--muted);
-  font-size:11px;
-}
-.selected-flag-preview{
-  flex:0 0 190px;
-  width:190px;
-  padding:7px;
-  border:1px solid var(--line);
-  border-radius:12px;
-  background:#0b0e11;
-}
-.selected-flag-preview img{
-  display:block;
-  width:100%;
-  aspect-ratio:16/10;
-  object-fit:contain;
-  border-radius:8px;
-}
-.faction-flag-section{
-  margin-top:18px;
-  padding:18px;
-  border:1px solid var(--line);
-  border-radius:16px;
-  background:rgba(255,255,255,.015);
-}
-.deadside-image-flag-grid{
-  display:grid;
-  grid-template-columns:repeat(6,minmax(0,1fr));
-  gap:10px;
-  max-height:none;
-  overflow:visible;
-}
-.deadside-image-flag{
-  position:relative;
-  padding:5px;
-  border:1px solid rgba(255,255,255,.08);
-  border-radius:12px;
-  background:#111417;
-  transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease;
-}
-.deadside-image-flag:hover{
-  transform:translateY(-2px);
-  border-color:rgba(255,255,255,.18);
-}
-.deadside-image-flag img{
-  width:100%;
-  aspect-ratio:16/10;
-  object-fit:contain;
-  border:0;
-  border-radius:8px;
-  background:#111214;
-}
-.deadside-image-flag:has(input:checked){
-  border-color:#d64a3f;
-  box-shadow:0 0 0 2px rgba(214,74,63,.18);
-}
-.deadside-image-flag:has(input:checked) img{
-  border:0;
-  box-shadow:none;
-}
-.flag-selection-check{
-  position:absolute;
-  top:9px;
-  right:9px;
-  z-index:2;
-  display:grid;
-  place-items:center;
-  width:24px;
-  height:24px;
-  border-radius:50%;
-  background:#e44236;
-  color:#fff;
-  font-size:13px;
-  font-weight:800;
-  opacity:0;
-  transform:scale(.7);
-  transition:.16s ease;
-}
-.deadside-image-flag:has(input:checked) .flag-selection-check{
-  opacity:1;
-  transform:scale(1);
-}
-.faction-form-actions{
-  position:sticky;
-  bottom:12px;
-  z-index:30;
-  justify-content:flex-end;
-  padding:12px;
-  border:1px solid var(--line);
-  border-radius:14px;
-  background:rgba(13,16,19,.94);
-  backdrop-filter:blur(12px);
-}
-.member-chips{
-  margin-top:10px;
-}
-.member-chip{
-  border-radius:10px;
-}
-.faction-card{
-  background:linear-gradient(145deg,rgba(18,22,26,.96),rgba(10,12,15,.96));
-}
-@media(max-width:1200px){
-  .deadside-image-flag-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
-}
-@media(max-width:760px){
-  .faction-section-heading{flex-direction:column}
-  .selected-flag-preview{width:100%;flex-basis:auto}
-  .deadside-image-flag-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .faction-form-actions{position:static}
+        display: block !important;
+
+        width: min(86vw, 320px) !important;
+        max-width: 320px !important;
+        height: 100dvh !important;
+        min-height: 100dvh !important;
+
+        padding: 18px 12px 28px !important;
+
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+
+        overscroll-behavior-y: contain !important;
+        -webkit-overflow-scrolling: touch !important;
+        touch-action: pan-y !important;
+
+        background:
+            linear-gradient(180deg, #111417, #0a0c0e) !important;
+
+        filter: none !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+
+        transform: translate3d(-100%, 0, 0) !important;
+        transition: transform .25s ease !important;
+        will-change: transform;
+        backface-visibility: hidden;
+        -webkit-font-smoothing: antialiased;
+
+        z-index: 3001 !important;
+    }
+
+    .app-sidebar.open {
+        transform: translate3d(0, 0, 0) !important;
+    }
+
+    .app-brand,
+    .sidebar-footer {
+        flex: none !important;
+    }
+
+    .app-nav {
+        display: flex !important;
+        flex: none !important;
+        flex-direction: column !important;
+
+        min-height: max-content !important;
+        height: auto !important;
+
+        overflow: visible !important;
+        touch-action: pan-y !important;
+
+        padding: 18px 2px 36px !important;
+    }
+
+    .sidebar-footer {
+        max-height: none !important;
+        overflow: visible !important;
+        margin-bottom: 12px;
+    }
+
+    .sidebar-backdrop {
+        z-index: 3000 !important;
+        background: rgba(0, 0, 0, .62) !important;
+
+        filter: none !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+    }
+
+    .mobile-menu {
+        position: relative;
+        z-index: 3002;
+    }
 }
