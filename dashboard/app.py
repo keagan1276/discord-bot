@@ -3102,36 +3102,36 @@ def deadside_killfeed():
 
 
 DEADSIDE_FLAG_PRESETS = [
-    {"value": "flag_01", "image": "/static/images/deadside_flags/flag_01.jpg"},
-    {"value": "flag_02", "image": "/static/images/deadside_flags/flag_02.jpg"},
-    {"value": "flag_03", "image": "/static/images/deadside_flags/flag_03.jpg"},
-    {"value": "flag_04", "image": "/static/images/deadside_flags/flag_04.jpg"},
-    {"value": "flag_05", "image": "/static/images/deadside_flags/flag_05.jpg"},
-    {"value": "flag_06", "image": "/static/images/deadside_flags/flag_06.jpg"},
-    {"value": "flag_07", "image": "/static/images/deadside_flags/flag_07.jpg"},
-    {"value": "flag_08", "image": "/static/images/deadside_flags/flag_08.jpg"},
-    {"value": "flag_09", "image": "/static/images/deadside_flags/flag_09.jpg"},
-    {"value": "flag_10", "image": "/static/images/deadside_flags/flag_10.jpg"},
-    {"value": "flag_11", "image": "/static/images/deadside_flags/flag_11.jpg"},
-    {"value": "flag_12", "image": "/static/images/deadside_flags/flag_12.jpg"},
-    {"value": "flag_13", "image": "/static/images/deadside_flags/flag_13.jpg"},
-    {"value": "flag_14", "image": "/static/images/deadside_flags/flag_14.jpg"},
-    {"value": "flag_15", "image": "/static/images/deadside_flags/flag_15.jpg"},
-    {"value": "flag_16", "image": "/static/images/deadside_flags/flag_16.jpg"},
-    {"value": "flag_17", "image": "/static/images/deadside_flags/flag_17.jpg"},
-    {"value": "flag_18", "image": "/static/images/deadside_flags/flag_18.jpg"},
-    {"value": "flag_19", "image": "/static/images/deadside_flags/flag_19.jpg"},
-    {"value": "flag_20", "image": "/static/images/deadside_flags/flag_20.jpg"},
-    {"value": "flag_21", "image": "/static/images/deadside_flags/flag_21.jpg"},
-    {"value": "flag_22", "image": "/static/images/deadside_flags/flag_22.jpg"},
-    {"value": "flag_23", "image": "/static/images/deadside_flags/flag_23.jpg"},
-    {"value": "flag_24", "image": "/static/images/deadside_flags/flag_24.jpg"},
-    {"value": "flag_25", "image": "/static/images/deadside_flags/flag_25.jpg"},
-    {"value": "flag_26", "image": "/static/images/deadside_flags/flag_26.jpg"},
-    {"value": "flag_27", "image": "/static/images/deadside_flags/flag_27.jpg"},
-    {"value": "flag_28", "image": "/static/images/deadside_flags/flag_28.jpg"},
-    {"value": "flag_29", "image": "/static/images/deadside_flags/flag_29.jpg"},
-    {"value": "flag_30", "image": "/static/images/deadside_flags/flag_30.jpg"},
+    {"value": "flag_01", "image": "/static/images/deadside_flags/flag_01.png"},
+    {"value": "flag_02", "image": "/static/images/deadside_flags/flag_02.png"},
+    {"value": "flag_03", "image": "/static/images/deadside_flags/flag_03.png"},
+    {"value": "flag_04", "image": "/static/images/deadside_flags/flag_04.png"},
+    {"value": "flag_05", "image": "/static/images/deadside_flags/flag_05.png"},
+    {"value": "flag_06", "image": "/static/images/deadside_flags/flag_06.png"},
+    {"value": "flag_07", "image": "/static/images/deadside_flags/flag_07.png"},
+    {"value": "flag_08", "image": "/static/images/deadside_flags/flag_08.png"},
+    {"value": "flag_09", "image": "/static/images/deadside_flags/flag_09.png"},
+    {"value": "flag_10", "image": "/static/images/deadside_flags/flag_10.png"},
+    {"value": "flag_11", "image": "/static/images/deadside_flags/flag_11.png"},
+    {"value": "flag_12", "image": "/static/images/deadside_flags/flag_12.png"},
+    {"value": "flag_13", "image": "/static/images/deadside_flags/flag_13.png"},
+    {"value": "flag_14", "image": "/static/images/deadside_flags/flag_14.png"},
+    {"value": "flag_15", "image": "/static/images/deadside_flags/flag_15.png"},
+    {"value": "flag_16", "image": "/static/images/deadside_flags/flag_16.png"},
+    {"value": "flag_17", "image": "/static/images/deadside_flags/flag_17.png"},
+    {"value": "flag_18", "image": "/static/images/deadside_flags/flag_18.png"},
+    {"value": "flag_19", "image": "/static/images/deadside_flags/flag_19.png"},
+    {"value": "flag_20", "image": "/static/images/deadside_flags/flag_20.png"},
+    {"value": "flag_21", "image": "/static/images/deadside_flags/flag_21.png"},
+    {"value": "flag_22", "image": "/static/images/deadside_flags/flag_22.png"},
+    {"value": "flag_23", "image": "/static/images/deadside_flags/flag_23.png"},
+    {"value": "flag_24", "image": "/static/images/deadside_flags/flag_24.png"},
+    {"value": "flag_25", "image": "/static/images/deadside_flags/flag_25.png"},
+    {"value": "flag_26", "image": "/static/images/deadside_flags/flag_26.png"},
+    {"value": "flag_27", "image": "/static/images/deadside_flags/flag_27.png"},
+    {"value": "flag_28", "image": "/static/images/deadside_flags/flag_28.png"},
+    {"value": "flag_29", "image": "/static/images/deadside_flags/flag_29.png"},
+    {"value": "flag_30", "image": "/static/images/deadside_flags/flag_30.png"},
 ]
 
 
@@ -3151,7 +3151,7 @@ def _normalise_deadside_factions(settings):
         faction.setdefault("member_ids", [])
         faction.setdefault("role_id", "")
         faction.setdefault("flag", "flag_01")
-        faction.setdefault("flag_image", "/static/images/deadside_flags/flag_01.jpg")
+        faction.setdefault("flag_image", "/static/images/deadside_flags/flag_01.png")
         faction.setdefault("custom_flag_url", "")
         faction.setdefault("channel_id", "")
         faction.setdefault("message_id", "")
@@ -3235,7 +3235,7 @@ def deadside_factions():
                 ),
                 {
                     "value": "flag_01",
-                    "image": "/static/images/deadside_flags/flag_01.jpg"
+                    "image": "/static/images/deadside_flags/flag_01.png"
                 }
             )
 
