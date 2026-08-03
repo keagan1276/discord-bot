@@ -1,13 +1,14 @@
 {% extends "base.html" %}
 {% block title %}{% block deadside_title %}Deadside{% endblock %} | Pirates Bot{% endblock %}
 {% block page_title %}☠️ Deadside{% endblock %}
-{% block description %}Manage your Deadside server integration, Discord output and player statistics.{% endblock %}
+{% block description %}Manage your GPORTAL Deadside server, killfeed, factions and player statistics.{% endblock %}
 {% block content %}
 <nav class="deadside-tabs" aria-label="Deadside settings">
   <a class="{{ 'active' if deadside_tab == 'overview' else '' }}" href="{{ url_for('deadside_overview') }}">Overview</a>
   <a class="{{ 'active' if deadside_tab == 'connection' else '' }}" href="{{ url_for('deadside_connection') }}">Connection</a>
   <a class="{{ 'active' if deadside_tab == 'channels' else '' }}" href="{{ url_for('deadside_channels') }}">Channels</a>
   <a class="{{ 'active' if deadside_tab == 'killfeed' else '' }}" href="{{ url_for('deadside_killfeed') }}">Killfeed</a>
+  <a class="{{ 'active' if deadside_tab == 'factions' else '' }}" href="{{ url_for('deadside_factions') }}">Factions</a>
   <a class="{{ 'active' if deadside_tab == 'leaderboards' else '' }}" href="{{ url_for('deadside_leaderboards') }}">Leaderboards</a>
   <a class="{{ 'active' if deadside_tab == 'statistics' else '' }}" href="{{ url_for('deadside_statistics') }}">Statistics</a>
   <a class="{{ 'active' if deadside_tab == 'advanced' else '' }}" href="{{ url_for('deadside_advanced') }}">Advanced</a>

@@ -1,183 +1,37 @@
 {% extends "deadside/base.html" %}
 {% block deadside_title %}Deadside Connection{% endblock %}
 {% block deadside_content %}
-
 <form method="post" class="deadside-form" autocomplete="off">
-    <div class="deadside-grid">
+  <div class="deadside-grid">
+    <section class="deadside-panel">
+      <h2>GPORTAL Deadside server</h2>
+      <label class="toggle-row"><input type="checkbox" name="enabled" {% if deadside.enabled %}checked{% endif %}><span>Enable Deadside integration</span></label>
+      <label>Server name<input name="server_name" value="{{ deadside.server_name }}" required></label>
+      <label>Server IP<input name="server_ip" value="{{ deadside.server_ip }}" placeholder="123.123.123.123"></label>
+      <p class="deadside-help">The public game-server IP can differ from the FTPS host.</p>
+    </section>
 
-        <section class="deadside-panel">
-            <h2>GPORTAL Deadside server</h2>
+    <section class="deadside-panel">
+      <h2>GPORTAL FTPS</h2>
+      <label>Protocol<input value="FTPS (explicit TLS)" readonly><input type="hidden" name="protocol" value="ftps"></label>
+      <label>Host<input name="host" value="{{ deadside.host }}" placeholder="GPORTAL FTPS host" required></label>
+      <label>Port<input type="number" min="1" max="65535" name="port" value="{{ deadside.port or 21 }}" required></label>
+      <label>Username<input name="username" value="{{ deadside.username }}" autocomplete="username" required></label>
+      <label>Password<input type="password" name="password" autocomplete="new-password" placeholder="{% if deadside.password_configured %}Saved — leave blank to keep it{% else %}GPORTAL FTPS password{% endif %}"></label>
+      <label class="toggle-row"><input type="checkbox" name="auto_reconnect" {% if deadside.auto_reconnect %}checked{% endif %}><span>Reconnect automatically</span></label>
+    </section>
 
-            <label class="toggle-row">
-                <input
-                    type="checkbox"
-                    name="enabled"
-                    {% if deadside.enabled %}checked{% endif %}
-                >
-                <span>Enable Deadside integration</span>
-            </label>
-
-            <label>
-                Server name
-                <input
-                    name="server_name"
-                    value="{{ deadside.server_name }}"
-                    placeholder="My Deadside Server"
-                    required
-                >
-            </label>
-
-            <label>
-                Server IP
-                <input
-                    name="server_ip"
-                    value="{{ deadside.server_ip }}"
-                    placeholder="123.123.123.123"
-                    inputmode="decimal"
-                >
-            </label>
-
-            <p class="deadside-help">
-                The server IP identifies the public game server. It may be
-                different from the FTPS host below.
-            </p>
-        </section>
-
-        <section class="deadside-panel">
-            <h2>FTPS connection</h2>
-
-            <label>
-                Protocol
-                <input
-                    name="protocol_display"
-                    value="FTPS (explicit TLS)"
-                    readonly
-                >
-                <input type="hidden" name="protocol" value="ftps">
-            </label>
-
-            <label>
-                Host
-                <input
-                    name="host"
-                    value="{{ deadside.host }}"
-                    placeholder="Your GPORTAL FTPS host"
-                    required
-                    autocomplete="off"
-                >
-            </label>
-
-            <label>
-                Port
-                <input
-                    type="number"
-                    min="1"
-                    max="65535"
-                    name="port"
-                    value="{{ deadside.port or 21 }}"
-                    placeholder="21"
-                    required
-                >
-            </label>
-
-            <label>
-                Username
-                <input
-                    name="username"
-                    value="{{ deadside.username }}"
-                    placeholder="GPORTAL FTPS username"
-                    required
-                    autocomplete="username"
-                >
-            </label>
-
-            <label>
-                Password
-                <input
-                    type="password"
-                    name="password"
-                    value=""
-                    autocomplete="new-password"
-                    placeholder="{% if deadside.password_configured %}Saved — leave blank to keep it{% else %}GPORTAL FTPS password{% endif %}"
-                >
-            </label>
-
-            <label class="toggle-row">
-                <input
-                    type="checkbox"
-                    name="auto_reconnect"
-                    {% if deadside.auto_reconnect %}checked{% endif %}
-                >
-                <span>Reconnect automatically</span>
-            </label>
-        </section>
-
-        <section class="deadside-panel deadside-full">
-            <h2>Deadside log locations</h2>
-
-            <label>
-                Deadside log path
-                <input
-                    name="deadside_log_path"
-                    value="{{ deadside.deadside_log_path }}"
-                    placeholder="/Deadside/Saved/Logs"
-                >
-            </label>
-
-            <label>
-                Death logs directory
-                <input
-                    name="death_logs_directory"
-                    value="{{ deadside.death_logs_directory }}"
-                    placeholder="/Deadside/Saved/Logs/Deaths"
-                >
-            </label>
-
-            <label>
-                Death log filename patterns
-                <input
-                    name="log_file_pattern"
-                    value="{{ deadside.log_file_pattern }}"
-                    placeholder="*.log,*.txt,*.csv,*.json"
-                >
-            </label>
-
-            <div class="deadside-check-grid">
-                <label>
-                    Poll interval (seconds)
-                    <input
-                        type="number"
-                        min="30"
-                        max="900"
-                        name="poll_interval"
-                        value="{{ deadside.poll_interval or 60 }}"
-                    >
-                </label>
-
-                <label>
-                    Newest files to read
-                    <input
-                        type="number"
-                        min="1"
-                        max="25"
-                        name="max_log_files"
-                        value="{{ deadside.max_log_files or 5 }}"
-                    >
-                </label>
-            </div>
-
-            <p class="deadside-help">
-                Enter the exact directories shown in the GPORTAL file-access
-                panel. The FTPS port is normally 21 unless GPORTAL shows a
-                different value.
-            </p>
-        </section>
-
-    </div>
-
-    <div class="deadside-actions">
-        <button type="submit">Save &amp; test FTPS connection</button>
-    </div>
+    <section class="deadside-panel deadside-full">
+      <h2>Log locations</h2>
+      <label>Deadside log path<input name="deadside_log_path" value="{{ deadside.deadside_log_path }}" placeholder="/Deadside/Saved/Logs"></label>
+      <label>Death logs directory<input name="death_logs_directory" value="{{ deadside.death_logs_directory }}" placeholder="/Deadside/Saved/Logs/Deaths"></label>
+      <label>Death log filename patterns<input name="log_file_pattern" value="{{ deadside.log_file_pattern }}" placeholder="*.log,*.txt,*.csv,*.json"></label>
+      <div class="deadside-check-grid">
+        <label>Poll interval (seconds)<input type="number" min="30" max="900" name="poll_interval" value="{{ deadside.poll_interval or 60 }}"></label>
+        <label>Newest files to read<input type="number" min="1" max="25" name="max_log_files" value="{{ deadside.max_log_files or 5 }}"></label>
+      </div>
+    </section>
+  </div>
+  <div class="deadside-actions"><button type="submit">Save &amp; test FTPS connection</button></div>
 </form>
-
 {% endblock %}

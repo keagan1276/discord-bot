@@ -309,6 +309,7 @@ def protect_dashboard():
         "reminders",
         "role_manager",
         "logs",
+        "deadside_factions",
     }
 
     if endpoint in selected_required_endpoints:
@@ -2929,10 +2930,16 @@ DEADSIDE_DEFAULTS = {
     "track_longest_kill": True,
     "track_favorite_weapon": True,
     "track_killstreak": True,
-    "factions": [],
     "duplicate_protection": True,
     "debug_logging": False,
     "auto_reconnect": True,
+    "factions": [],
+    "faction_settings": {
+        "enabled": True,
+        "allow_multiple_memberships": False,
+        "show_flags_in_killfeed": True,
+        "show_faction_names_in_killfeed": True
+    },
     "kill_pattern": r"(?P<killer>.+?)\\s+(?:killed|eliminated)\\s+(?P<victim>.+?)(?:\\s+with\\s+(?P<weapon>.+?))?(?:\\s+at\\s+(?P<distance>\\d+(?:\\.\\d+)?)m)?$",
 }
 
@@ -2988,7 +2995,6 @@ def deadside_connection():
     if not guild_id:
         return redirect(url_for("servers"))
 
-    # This integration is intentionally GPORTAL FTPS-only.
     settings["provider"] = "gportal"
     settings["connection_method"] = "ftps"
     settings["protocol"] = "ftps"
@@ -3026,10 +3032,7 @@ def deadside_connection():
         try:
             settings["port"] = max(
                 1,
-                min(
-                    int(request.form.get("port", "21") or 21),
-                    65535
-                )
+                min(int(request.form.get("port", "21") or 21), 65535)
             )
         except ValueError:
             settings["port"] = 21
@@ -3097,83 +3100,195 @@ def deadside_killfeed():
     return render_template("deadside/killfeed.html", deadside=settings, deadside_tab="killfeed")
 
 
+
+DEADSIDE_FLAG_PRESETS = [
+    {"value": "🏴‍☠️", "name": "Pirate"},
+    {"value": "🏴", "name": "Black"},
+    {"value": "🏳️", "name": "White"},
+    {"value": "🇬🇧", "name": "United Kingdom"},
+    {"value": "🇺🇸", "name": "United States"},
+    {"value": "🇨🇦", "name": "Canada"},
+    {"value": "🇩🇪", "name": "Germany"},
+    {"value": "🇫🇷", "name": "France"},
+    {"value": "🇮🇹", "name": "Italy"},
+    {"value": "🇪🇸", "name": "Spain"},
+    {"value": "🇵🇹", "name": "Portugal"},
+    {"value": "🇳🇱", "name": "Netherlands"},
+    {"value": "🇧🇪", "name": "Belgium"},
+    {"value": "🇵🇱", "name": "Poland"},
+    {"value": "🇺🇦", "name": "Ukraine"},
+    {"value": "🇷🇺", "name": "Russia"},
+    {"value": "🇸🇪", "name": "Sweden"},
+    {"value": "🇳🇴", "name": "Norway"},
+    {"value": "🇫🇮", "name": "Finland"},
+    {"value": "🇩🇰", "name": "Denmark"},
+    {"value": "🇨🇿", "name": "Czechia"},
+    {"value": "🇦🇹", "name": "Austria"},
+    {"value": "🇨🇭", "name": "Switzerland"},
+    {"value": "🇹🇷", "name": "Türkiye"},
+    {"value": "🇧🇷", "name": "Brazil"},
+    {"value": "🇦🇺", "name": "Australia"},
+    {"value": "🇯🇵", "name": "Japan"},
+    {"value": "🇰🇷", "name": "South Korea"},
+    {"value": "🇨🇳", "name": "China"},
+    {"value": "🇿🇦", "name": "South Africa"},
+]
+
+
+def _normalise_deadside_factions(settings):
+    factions = settings.get("factions", [])
+    if not isinstance(factions, list):
+        factions = []
+
+    cleaned = []
+    for item in factions:
+        if not isinstance(item, dict):
+            continue
+        faction = dict(item)
+        faction.setdefault("id", secrets.token_urlsafe(8))
+        faction.setdefault("name", "Unnamed Faction")
+        faction.setdefault("leader_id", "")
+        faction.setdefault("member_ids", [])
+        faction.setdefault("role_id", "")
+        faction.setdefault("flag", "🏴‍☠️")
+        faction.setdefault("flag_name", "Pirate")
+        faction.setdefault("custom_flag_url", "")
+        faction.setdefault("color", "991111")
+        faction.setdefault("description", "")
+        faction.setdefault("enabled", True)
+        if not isinstance(faction["member_ids"], list):
+            faction["member_ids"] = []
+        faction["member_ids"] = [str(value) for value in faction["member_ids"]]
+        cleaned.append(faction)
+
+    settings["factions"] = cleaned
+    settings.setdefault("faction_settings", {
+        "enabled": True,
+        "allow_multiple_memberships": False,
+        "show_flags_in_killfeed": True,
+        "show_faction_names_in_killfeed": True,
+    })
+    return cleaned
+
+
 @app.route("/integrations/deadside/factions", methods=["GET", "POST"])
 def deadside_factions():
     guild_id, settings = require_deadside_guild()
     if not guild_id:
         return redirect(url_for("servers"))
 
-    factions = settings.setdefault("factions", [])
-    if not isinstance(factions, list):
-        factions = []
-        settings["factions"] = factions
+    factions = _normalise_deadside_factions(settings)
+    action = request.form.get("action", "").strip().lower()
 
     if request.method == "POST":
-        action = request.form.get("action", "save").strip().lower()
-        faction_id = request.form.get("faction_id", "").strip()
+        faction_settings = settings.setdefault("faction_settings", {})
+        faction_settings["enabled"] = "factions_enabled" in request.form
+        faction_settings["allow_multiple_memberships"] = (
+            "allow_multiple_memberships" in request.form
+        )
+        faction_settings["show_flags_in_killfeed"] = (
+            "show_flags_in_killfeed" in request.form
+        )
+        faction_settings["show_faction_names_in_killfeed"] = (
+            "show_faction_names_in_killfeed" in request.form
+        )
 
         if action == "delete":
+            faction_id = request.form.get("faction_id", "").strip()
             settings["factions"] = [
-                faction for faction in factions
-                if str(faction.get("id", "")) != faction_id
+                faction
+                for faction in factions
+                if str(faction.get("id")) != faction_id
             ]
             save_deadside_settings(settings)
             return redirect(url_for("deadside_factions"))
 
-        name = request.form.get("faction_name", "").strip()
-        leader_id = request.form.get("leader_id", "").strip()
-        member_ids = [
-            str(member_id).strip()
-            for member_id in request.form.getlist("member_ids")
-            if str(member_id).strip()
-        ]
+        if action in {"create", "update"}:
+            faction_id = request.form.get("faction_id", "").strip()
+            target = None
 
-        if leader_id and leader_id not in member_ids:
-            member_ids.insert(0, leader_id)
+            if action == "update" and faction_id:
+                target = next(
+                    (
+                        faction
+                        for faction in factions
+                        if str(faction.get("id")) == faction_id
+                    ),
+                    None
+                )
 
-        flag_value = request.form.get("flag_value", "🏴‍☠️").strip() or "🏴‍☠️"
-        custom_flag_url = request.form.get("custom_flag_url", "").strip()
-        role_id = request.form.get("discord_role_id", "").strip()
-        colour = request.form.get("faction_colour", "991111").replace("#", "").strip()
+            if target is None:
+                target = {
+                    "id": secrets.token_urlsafe(8),
+                    "member_ids": [],
+                }
+                factions.append(target)
 
-        if not name:
-            flash("Enter a faction name.", "warning")
+            selected_flag = request.form.get("flag", "🏴‍☠️")
+            preset = next(
+                (
+                    flag
+                    for flag in DEADSIDE_FLAG_PRESETS
+                    if flag["value"] == selected_flag
+                ),
+                {"value": "🏴‍☠️", "name": "Pirate"}
+            )
+
+            leader_id = request.form.get("leader_id", "").strip()
+            member_ids = [
+                str(value).strip()
+                for value in request.form.getlist("member_ids")
+                if str(value).strip()
+            ]
+            if leader_id and leader_id not in member_ids:
+                member_ids.insert(0, leader_id)
+
+            target.update({
+                "name": request.form.get(
+                    "faction_name",
+                    "Unnamed Faction"
+                ).strip()[:80],
+                "leader_id": leader_id,
+                "member_ids": list(dict.fromkeys(member_ids)),
+                "role_id": request.form.get("role_id", "").strip(),
+                "flag": preset["value"],
+                "flag_name": preset["name"],
+                "custom_flag_url": request.form.get(
+                    "custom_flag_url",
+                    ""
+                ).strip(),
+                "color": request.form.get(
+                    "color",
+                    "991111"
+                ).replace("#", "").strip()[:6],
+                "description": request.form.get(
+                    "description",
+                    ""
+                ).strip()[:500],
+                "enabled": "faction_enabled" in request.form,
+            })
+
+            settings["factions"] = factions
+            save_deadside_settings(settings)
             return redirect(url_for("deadside_factions"))
 
-        record = {
-            "id": faction_id or secrets.token_hex(8),
-            "name": name[:80],
-            "leader_id": leader_id,
-            "member_ids": list(dict.fromkeys(member_ids)),
-            "flag_value": flag_value[:16],
-            "custom_flag_url": custom_flag_url[:500],
-            "discord_role_id": role_id,
-            "colour": colour[:6] or "991111",
-        }
-
-        replaced = False
-        for index, faction in enumerate(factions):
-            if str(faction.get("id", "")) == record["id"]:
-                factions[index] = record
-                replaced = True
-                break
-        if not replaced:
-            factions.append(record)
-
-        settings["factions"] = factions
         save_deadside_settings(settings)
         return redirect(url_for("deadside_factions"))
 
     members = bot_api_get(f"/api/guild/{guild_id}/members") or []
     roles = bot_api_get(f"/api/guild/{guild_id}/roles") or []
+
     return render_template(
         "deadside/factions.html",
         deadside=settings,
         factions=factions,
+        faction_settings=settings.get("faction_settings", {}),
+        flag_presets=DEADSIDE_FLAG_PRESETS,
         members=members,
         roles=roles,
         deadside_tab="factions",
     )
+
 
 
 @app.route("/integrations/deadside/leaderboards", methods=["GET", "POST"])

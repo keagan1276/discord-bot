@@ -4332,7 +4332,7 @@ def _deadside_fetch_ftp(config, secure=False):
     password = str(config.get("password", ""))
     port = int(config.get("port") or (21 if not secure else 21))
     if not host or not username or not password:
-        raise RuntimeError("Host, username and password are required for GPORTAL FTPS.")
+        raise RuntimeError("Host, username and password are required for FTP/FTPS.")
 
     client_class = ftplib.FTP_TLS if secure else ftplib.FTP
     client = client_class(timeout=20)
@@ -4737,8 +4737,8 @@ async def apply_dashboard_feature(feature):
                 raise RuntimeError("Choose a valid Deadside killfeed channel.")
             if config.get("leaderboard_enabled", True) and not _find_text_channel(config.get("leaderboard_channel")):
                 raise RuntimeError("Choose a valid Deadside leaderboard channel or disable leaderboards.")
-            protocol = str(config.get("protocol") or config.get("connection_method") or "ftps").lower()
-            if protocol in {"ftps", "ftp_tls", "ftp-tls"}:
+            protocol = str(config.get("protocol") or config.get("connection_method") or "ftp").lower()
+            if protocol in {"ftp", "ftps", "sftp"}:
                 required = ("host", "username", "password")
                 missing = [field for field in required if not str(config.get(field, "")).strip()]
                 if missing:

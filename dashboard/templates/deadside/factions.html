@@ -2,77 +2,208 @@
 {% block deadside_title %}Deadside Factions{% endblock %}
 {% block deadside_content %}
 
-<div class="deadside-grid faction-layout">
-<section class="deadside-panel faction-editor">
-<h2>Create or edit faction</h2>
-<form method="post" class="deadside-form" id="faction-form">
-<input type="hidden" name="action" value="save">
-<input type="hidden" name="faction_id" id="faction-id" value="">
-<label>Faction name<input name="faction_name" id="faction-name" maxlength="80" required></label>
-<label>Faction leader
-<select name="leader_id" id="faction-leader">
-<option value="">Choose a leader</option>
-{% for member in members if not member.bot %}<option value="{{ member.id }}">{{ member.name }} — {{ member.username }}</option>{% endfor %}
-</select></label>
-<label>Faction members
-<select name="member_ids" id="faction-members" multiple size="10">
-{% for member in members if not member.bot %}<option value="{{ member.id }}">{{ member.name }} — {{ member.username }}</option>{% endfor %}
-</select></label>
-<p class="deadside-help">Hold Ctrl on Windows or Command on Mac to choose multiple members. The leader is added automatically.</p>
-<label>Discord role
-<select name="discord_role_id" id="faction-role"><option value="">No linked role</option>{% for role in roles %}<option value="{{ role.id }}">{{ role.name }}</option>{% endfor %}</select>
-</label>
-<label>Faction colour<input type="color" name="faction_colour" id="faction-colour" value="#991111"></label>
-<h3>Faction flag</h3>
-<div class="faction-flag-grid"><label class="faction-flag-option" title="Pirate"><input type="radio" name="flag_value" value="🏴‍☠️" checked><span class="faction-flag-emoji">🏴‍☠️</span><small>Pirate</small></label>
-<label class="faction-flag-option" title="Black"><input type="radio" name="flag_value" value="🏴" ><span class="faction-flag-emoji">🏴</span><small>Black</small></label>
-<label class="faction-flag-option" title="White"><input type="radio" name="flag_value" value="🏳️" ><span class="faction-flag-emoji">🏳️</span><small>White</small></label>
-<label class="faction-flag-option" title="United Kingdom"><input type="radio" name="flag_value" value="🇬🇧" ><span class="faction-flag-emoji">🇬🇧</span><small>United Kingdom</small></label>
-<label class="faction-flag-option" title="United States"><input type="radio" name="flag_value" value="🇺🇸" ><span class="faction-flag-emoji">🇺🇸</span><small>United States</small></label>
-<label class="faction-flag-option" title="Canada"><input type="radio" name="flag_value" value="🇨🇦" ><span class="faction-flag-emoji">🇨🇦</span><small>Canada</small></label>
-<label class="faction-flag-option" title="France"><input type="radio" name="flag_value" value="🇫🇷" ><span class="faction-flag-emoji">🇫🇷</span><small>France</small></label>
-<label class="faction-flag-option" title="Germany"><input type="radio" name="flag_value" value="🇩🇪" ><span class="faction-flag-emoji">🇩🇪</span><small>Germany</small></label>
-<label class="faction-flag-option" title="Spain"><input type="radio" name="flag_value" value="🇪🇸" ><span class="faction-flag-emoji">🇪🇸</span><small>Spain</small></label>
-<label class="faction-flag-option" title="Italy"><input type="radio" name="flag_value" value="🇮🇹" ><span class="faction-flag-emoji">🇮🇹</span><small>Italy</small></label>
-<label class="faction-flag-option" title="Portugal"><input type="radio" name="flag_value" value="🇵🇹" ><span class="faction-flag-emoji">🇵🇹</span><small>Portugal</small></label>
-<label class="faction-flag-option" title="Netherlands"><input type="radio" name="flag_value" value="🇳🇱" ><span class="faction-flag-emoji">🇳🇱</span><small>Netherlands</small></label>
-<label class="faction-flag-option" title="Belgium"><input type="radio" name="flag_value" value="🇧🇪" ><span class="faction-flag-emoji">🇧🇪</span><small>Belgium</small></label>
-<label class="faction-flag-option" title="Poland"><input type="radio" name="flag_value" value="🇵🇱" ><span class="faction-flag-emoji">🇵🇱</span><small>Poland</small></label>
-<label class="faction-flag-option" title="Ukraine"><input type="radio" name="flag_value" value="🇺🇦" ><span class="faction-flag-emoji">🇺🇦</span><small>Ukraine</small></label>
-<label class="faction-flag-option" title="Russia"><input type="radio" name="flag_value" value="🇷🇺" ><span class="faction-flag-emoji">🇷🇺</span><small>Russia</small></label>
-<label class="faction-flag-option" title="Czechia"><input type="radio" name="flag_value" value="🇨🇿" ><span class="faction-flag-emoji">🇨🇿</span><small>Czechia</small></label>
-<label class="faction-flag-option" title="Slovakia"><input type="radio" name="flag_value" value="🇸🇰" ><span class="faction-flag-emoji">🇸🇰</span><small>Slovakia</small></label>
-<label class="faction-flag-option" title="Hungary"><input type="radio" name="flag_value" value="🇭🇺" ><span class="faction-flag-emoji">🇭🇺</span><small>Hungary</small></label>
-<label class="faction-flag-option" title="Romania"><input type="radio" name="flag_value" value="🇷🇴" ><span class="faction-flag-emoji">🇷🇴</span><small>Romania</small></label>
-<label class="faction-flag-option" title="Sweden"><input type="radio" name="flag_value" value="🇸🇪" ><span class="faction-flag-emoji">🇸🇪</span><small>Sweden</small></label>
-<label class="faction-flag-option" title="Norway"><input type="radio" name="flag_value" value="🇳🇴" ><span class="faction-flag-emoji">🇳🇴</span><small>Norway</small></label>
-<label class="faction-flag-option" title="Finland"><input type="radio" name="flag_value" value="🇫🇮" ><span class="faction-flag-emoji">🇫🇮</span><small>Finland</small></label>
-<label class="faction-flag-option" title="Denmark"><input type="radio" name="flag_value" value="🇩🇰" ><span class="faction-flag-emoji">🇩🇰</span><small>Denmark</small></label>
-<label class="faction-flag-option" title="Ireland"><input type="radio" name="flag_value" value="🇮🇪" ><span class="faction-flag-emoji">🇮🇪</span><small>Ireland</small></label>
-<label class="faction-flag-option" title="Australia"><input type="radio" name="flag_value" value="🇦🇺" ><span class="faction-flag-emoji">🇦🇺</span><small>Australia</small></label>
-<label class="faction-flag-option" title="New Zealand"><input type="radio" name="flag_value" value="🇳🇿" ><span class="faction-flag-emoji">🇳🇿</span><small>New Zealand</small></label>
-<label class="faction-flag-option" title="Japan"><input type="radio" name="flag_value" value="🇯🇵" ><span class="faction-flag-emoji">🇯🇵</span><small>Japan</small></label>
-<label class="faction-flag-option" title="South Korea"><input type="radio" name="flag_value" value="🇰🇷" ><span class="faction-flag-emoji">🇰🇷</span><small>South Korea</small></label>
-<label class="faction-flag-option" title="Brazil"><input type="radio" name="flag_value" value="🇧🇷" ><span class="faction-flag-emoji">🇧🇷</span><small>Brazil</small></label></div>
-<label>Custom flag image URL (optional)<input type="url" name="custom_flag_url" id="custom-flag-url" placeholder="https://example.com/flag.png"></label>
-<div class="deadside-actions faction-actions"><button type="button" class="deadside-secondary" id="faction-clear">Clear</button><button type="submit">Save faction</button></div>
-</form>
+<section class="deadside-panel faction-settings-panel">
+  <div class="panel-heading">
+    <div><span class="panel-icon">⚔️</span><h2>Faction settings</h2></div>
+  </div>
+  <form method="post" class="deadside-form faction-settings-form">
+    <input type="hidden" name="action" value="settings">
+    <div class="deadside-check-grid">
+      <label class="toggle-row"><input type="checkbox" name="factions_enabled" {% if faction_settings.enabled %}checked{% endif %}><span>Enable factions</span></label>
+      <label class="toggle-row"><input type="checkbox" name="allow_multiple_memberships" {% if faction_settings.allow_multiple_memberships %}checked{% endif %}><span>Allow members in multiple factions</span></label>
+      <label class="toggle-row"><input type="checkbox" name="show_flags_in_killfeed" {% if faction_settings.show_flags_in_killfeed %}checked{% endif %}><span>Show flags in killfeed</span></label>
+      <label class="toggle-row"><input type="checkbox" name="show_faction_names_in_killfeed" {% if faction_settings.show_faction_names_in_killfeed %}checked{% endif %}><span>Show faction names in killfeed</span></label>
+    </div>
+    <div class="deadside-actions"><button type="submit">Save faction settings</button></div>
+  </form>
 </section>
 
-<section class="deadside-panel faction-list-panel">
-<h2>Configured factions</h2>
-{% if factions %}<div class="faction-card-list">
-{% for faction in factions %}
-<article class="faction-card" style="--faction-colour:#{{ faction.colour or '991111' }}">
-<div class="faction-card-flag">{% if faction.custom_flag_url %}<img src="{{ faction.custom_flag_url }}" alt="{{ faction.name }} flag">{% else %}{{ faction.flag_value or '🏴‍☠️' }}{% endif %}</div>
-<div class="faction-card-body"><h3>{{ faction.name }}</h3><p><strong>Leader:</strong> {% set leader = (members | selectattr('id','equalto',faction.leader_id) | list | first) %}{{ leader.name if leader else 'Not selected' }}</p><p><strong>Members:</strong> {{ faction.member_ids | length }}</p></div>
-<div class="faction-card-actions"><button type="button" class="secondary-button faction-edit" data-faction='{{ faction | tojson | forceescape }}'>Edit</button><form method="post" onsubmit="return confirm('Delete this faction?');"><input type="hidden" name="action" value="delete"><input type="hidden" name="faction_id" value="{{ faction.id }}"><button type="submit" class="danger-button">Delete</button></form></div>
-</article>
-{% endfor %}</div>{% else %}<div class="empty-state"><span>🏴</span><h3>No factions yet</h3><p>Create the first faction using the form.</p></div>{% endif %}
-</section>
+<div class="faction-layout">
+  <section class="deadside-panel faction-editor-panel">
+    <div class="panel-heading">
+      <div><span class="panel-icon">➕</span><h2 id="faction-editor-heading">Create faction</h2></div>
+    </div>
+
+    <form method="post" class="deadside-form" id="faction-form" autocomplete="off">
+      <input type="hidden" name="action" id="faction-action" value="create">
+      <input type="hidden" name="faction_id" id="faction-id" value="">
+
+      <label>Faction name<input name="faction_name" id="faction-name" maxlength="80" required></label>
+
+      <label>
+        Faction leader
+        <select name="leader_id" id="faction-leader">
+          <option value="">Select leader</option>
+          {% for member in members if not member.bot %}
+          <option value="{{ member.id }}">{{ member.name }} ({{ member.username }})</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>
+        Faction members
+        <select name="member_ids" id="faction-members" multiple size="10">
+          {% for member in members if not member.bot %}
+          <option value="{{ member.id }}">{{ member.name }} ({{ member.username }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      <p class="deadside-help">Hold Ctrl on Windows or Cmd on Mac to select multiple members.</p>
+
+      <label>
+        Linked Discord role
+        <select name="role_id" id="faction-role">
+          <option value="">No linked role</option>
+          {% for role in roles %}
+          <option value="{{ role.id }}">{{ role.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <div class="form-group">
+        <label>Faction flag</label>
+        <div class="faction-flag-grid">
+          {% for flag in flag_presets %}
+          <label class="faction-flag-option" title="{{ flag.name }}">
+            <input type="radio" name="flag" value="{{ flag.value }}" {% if loop.first %}checked{% endif %}>
+            <span class="faction-flag-emoji">{{ flag.value }}</span>
+            <small>{{ flag.name }}</small>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <label>Custom flag image URL<input type="url" name="custom_flag_url" id="faction-custom-flag" placeholder="https://example.com/flag.png"></label>
+      <label>Faction colour<input type="color" name="color" id="faction-color" value="#991111"></label>
+      <label>Description<textarea name="description" id="faction-description" maxlength="500" placeholder="Faction description"></textarea></label>
+      <label class="toggle-row"><input type="checkbox" name="faction_enabled" id="faction-enabled" checked><span>Faction enabled</span></label>
+
+      <div class="faction-form-actions">
+        <button type="submit" class="primary-button">Save faction</button>
+        <button type="button" class="secondary-button" id="cancel-faction-edit" hidden>Cancel edit</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="deadside-panel">
+    <div class="panel-heading">
+      <div><span class="panel-icon">🏴</span><h2>Existing factions</h2></div>
+      <span class="pill">{{ factions|length }} total</span>
+    </div>
+
+    {% if factions %}
+    <div class="faction-card-grid">
+      {% for faction in factions %}
+      <article class="faction-card" data-faction='{{ faction|tojson|forceescape }}'>
+        <div class="faction-card-header">
+          <div class="faction-card-flag">
+            {% if faction.custom_flag_url %}
+            <img src="{{ faction.custom_flag_url }}" alt="{{ faction.flag_name }}">
+            {% else %}
+            <span>{{ faction.flag }}</span>
+            {% endif %}
+          </div>
+          <div>
+            <h3>{{ faction.name }}</h3>
+            <small>{{ faction.member_ids|length }} member{% if faction.member_ids|length != 1 %}s{% endif %}</small>
+          </div>
+          <span class="faction-status {{ 'enabled' if faction.enabled else 'disabled' }}">{{ 'Enabled' if faction.enabled else 'Disabled' }}</span>
+        </div>
+
+        {% set leader = namespace(name='Not selected') %}
+        {% for member in members %}
+          {% if member.id|string == faction.leader_id|string %}
+            {% set leader.name = member.name %}
+          {% endif %}
+        {% endfor %}
+
+        <dl class="faction-meta">
+          <div><dt>Leader</dt><dd>{{ leader.name }}</dd></div>
+          <div><dt>Flag</dt><dd>{{ faction.flag_name }}</dd></div>
+          <div><dt>Role</dt><dd>{% set role_name = namespace(value='Not linked') %}{% for role in roles %}{% if role.id|string == faction.role_id|string %}{% set role_name.value = role.name %}{% endif %}{% endfor %}{{ role_name.value }}</dd></div>
+        </dl>
+
+        {% if faction.description %}
+        <p class="faction-description">{{ faction.description }}</p>
+        {% endif %}
+
+        <div class="faction-card-actions">
+          <button type="button" class="secondary-button edit-faction">Edit</button>
+          <form method="post" onsubmit="return confirm('Delete this faction?');">
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="faction_id" value="{{ faction.id }}">
+            <button type="submit" class="danger-button">Delete</button>
+          </form>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <span>🏴</span>
+      <h3>No factions yet</h3>
+      <p>Create your first Deadside faction using the form.</p>
+    </div>
+    {% endif %}
+  </section>
 </div>
 
 <script>
-(()=>{const form=document.getElementById('faction-form');const clear=document.getElementById('faction-clear');function reset(){form.reset();document.getElementById('faction-id').value='';document.getElementById('faction-colour').value='#991111';const first=form.querySelector('input[name="flag_value"]');if(first)first.checked=true;window.scrollTo({top:0,behavior:'smooth'});}clear.addEventListener('click',reset);document.querySelectorAll('.faction-edit').forEach(button=>button.addEventListener('click',()=>{const f=JSON.parse(button.dataset.faction);document.getElementById('faction-id').value=f.id||'';document.getElementById('faction-name').value=f.name||'';document.getElementById('faction-leader').value=f.leader_id||'';document.getElementById('faction-role').value=f.discord_role_id||'';document.getElementById('faction-colour').value='#'+(f.colour||'991111');document.getElementById('custom-flag-url').value=f.custom_flag_url||'';const memberSet=new Set(f.member_ids||[]);[...document.getElementById('faction-members').options].forEach(o=>o.selected=memberSet.has(o.value));const radio=form.querySelector(`input[name="flag_value"][value="${CSS.escape(f.flag_value||'🏴‍☠️')}"]`);if(radio)radio.checked=true;window.scrollTo({top:0,behavior:'smooth'});}));})();
+(() => {
+  const form = document.getElementById("faction-form");
+  const heading = document.getElementById("faction-editor-heading");
+  const action = document.getElementById("faction-action");
+  const id = document.getElementById("faction-id");
+  const name = document.getElementById("faction-name");
+  const leader = document.getElementById("faction-leader");
+  const members = document.getElementById("faction-members");
+  const role = document.getElementById("faction-role");
+  const customFlag = document.getElementById("faction-custom-flag");
+  const color = document.getElementById("faction-color");
+  const description = document.getElementById("faction-description");
+  const enabled = document.getElementById("faction-enabled");
+  const cancel = document.getElementById("cancel-faction-edit");
+
+  function resetEditor() {
+    form.reset();
+    action.value = "create";
+    id.value = "";
+    heading.textContent = "Create faction";
+    cancel.hidden = true;
+    color.value = "#991111";
+    enabled.checked = true;
+  }
+
+  document.querySelectorAll(".edit-faction").forEach(button => {
+    button.addEventListener("click", () => {
+      const card = button.closest(".faction-card");
+      const data = JSON.parse(card.dataset.faction);
+      action.value = "update";
+      id.value = data.id || "";
+      name.value = data.name || "";
+      leader.value = data.leader_id || "";
+      role.value = data.role_id || "";
+      customFlag.value = data.custom_flag_url || "";
+      color.value = "#" + (data.color || "991111").replace("#", "");
+      description.value = data.description || "";
+      enabled.checked = data.enabled !== false;
+
+      [...members.options].forEach(option => {
+        option.selected = (data.member_ids || []).map(String).includes(String(option.value));
+      });
+
+      const flagInput = [...form.querySelectorAll('input[name="flag"]')]
+        .find(input => input.value === data.flag);
+      if (flagInput) flagInput.checked = true;
+
+      heading.textContent = "Edit faction";
+      cancel.hidden = false;
+      form.scrollIntoView({behavior: "smooth", block: "start"});
+    });
+  });
+
+  cancel.addEventListener("click", resetEditor);
+})();
 </script>
+
 {% endblock %}
