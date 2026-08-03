@@ -4332,7 +4332,7 @@ def _deadside_fetch_ftp(config, secure=False):
     password = str(config.get("password", ""))
     port = int(config.get("port") or (21 if not secure else 21))
     if not host or not username or not password:
-        raise RuntimeError("Host, username and password are required for FTP/FTPS.")
+        raise RuntimeError("Host, username and password are required for GPORTAL FTPS.")
 
     client_class = ftplib.FTP_TLS if secure else ftplib.FTP
     client = client_class(timeout=20)
@@ -4490,16 +4490,19 @@ async def _post_deadside_admin_event(config, event):
 
 
 def _deadside_fetch_sync(config):
-    protocol = str(config.get("protocol") or config.get("connection_method") or "ftp").lower().strip()
-    if protocol in {"http", "https"}:
-        return _deadside_fetch_http(config)
-    if protocol == "ftp":
-        return _deadside_fetch_ftp(config, secure=False)
-    if protocol in {"ftps", "ftp_tls", "ftp-tls"}:
-        return _deadside_fetch_ftp(config, secure=True)
-    if protocol == "sftp":
-        return _deadside_fetch_sftp(config)
-    raise RuntimeError("Protocol must be FTP, FTPS, SFTP or HTTP(S).")
+    protocol = str(
+        config.get("protocol")
+        or config.get("connection_method")
+        or "ftps"
+    ).lower().strip()
+
+    if protocol not in {"ftps", "ftp_tls", "ftp-tls"}:
+        raise RuntimeError(
+            "This Deadside integration supports GPORTAL FTPS only."
+        )
+
+    return _deadside_fetch_ftp(config, secure=True)
+
 
 
 def _deadside_parse_events(raw, config):
@@ -4734,8 +4737,8 @@ async def apply_dashboard_feature(feature):
                 raise RuntimeError("Choose a valid Deadside killfeed channel.")
             if config.get("leaderboard_enabled", True) and not _find_text_channel(config.get("leaderboard_channel")):
                 raise RuntimeError("Choose a valid Deadside leaderboard channel or disable leaderboards.")
-            protocol = str(config.get("protocol") or config.get("connection_method") or "ftp").lower()
-            if protocol in {"ftp", "ftps", "sftp"}:
+            protocol = str(config.get("protocol") or config.get("connection_method") or "ftps").lower()
+            if protocol in {"ftps", "ftp_tls", "ftp-tls"}:
                 required = ("host", "username", "password")
                 missing = [field for field in required if not str(config.get(field, "")).strip()]
                 if missing:

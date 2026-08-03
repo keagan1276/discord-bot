@@ -2873,9 +2873,9 @@ DEADSIDE_DEFAULTS = {
     "enabled": False,
     "guild_id": "",
     "server_name": "My Deadside Server",
-    "provider": "other",
-    "connection_method": "ftp",
-    "protocol": "ftp",
+    "provider": "gportal",
+    "connection_method": "ftps",
+    "protocol": "ftps",
     "host": "",
     "port": 21,
     "username": "",
@@ -2986,58 +2986,83 @@ def deadside_connection():
     guild_id, settings = require_deadside_guild()
     if not guild_id:
         return redirect(url_for("servers"))
+
+    # This integration is intentionally GPORTAL FTPS-only.
+    settings["provider"] = "gportal"
+    settings["connection_method"] = "ftps"
+    settings["protocol"] = "ftps"
+
     if request.method == "POST":
         settings.update({
             "enabled": "enabled" in request.form,
             "guild_id": guild_id,
-            "server_name": request.form.get("server_name", "My Deadside Server").strip(),
-            "provider": request.form.get("provider", "other").strip(),
-            "connection_method": request.form.get("protocol", "ftp").strip().lower(),
-            "protocol": request.form.get("protocol", "ftp").strip().lower(),
+            "server_name": request.form.get(
+                "server_name",
+                "My Deadside Server"
+            ).strip(),
+            "provider": "gportal",
+            "connection_method": "ftps",
+            "protocol": "ftps",
             "host": request.form.get("host", "").strip(),
             "username": request.form.get("username", "").strip(),
             "password": request.form.get("password", ""),
             "server_ip": request.form.get("server_ip", "").strip(),
-            "deadside_log_path": request.form.get("deadside_log_path", "").strip(),
-            "death_logs_directory": request.form.get("death_logs_directory", "").strip(),
-            "admin_logs_directory": request.form.get("admin_logs_directory", "").strip(),
-            "admin_log_file_pattern": request.form.get("admin_log_file_pattern", "*.log,*.txt,*.csv").strip(),
-            "admin_logs_enabled": "admin_logs_enabled" in request.form,
-            "admin_show_spawns": "admin_show_spawns" in request.form,
-            "admin_show_vehicles": "admin_show_vehicles" in request.form,
-            "admin_show_teleports": "admin_show_teleports" in request.form,
-            "admin_show_kicks": "admin_show_kicks" in request.form,
-            "admin_show_bans": "admin_show_bans" in request.form,
-            "admin_show_godmode": "admin_show_godmode" in request.form,
-            "admin_show_coordinates": "admin_show_coordinates" in request.form,
-            "log_file_pattern": request.form.get("log_file_pattern", "*.log,*.txt,*.csv,*.json").strip(),
-            "feed_url": request.form.get("feed_url", "").strip(),
-            "auth_header": request.form.get("auth_header", "Authorization").strip(),
-            "auth_token": request.form.get("auth_token", "").strip(),
+            "deadside_log_path": request.form.get(
+                "deadside_log_path",
+                ""
+            ).strip(),
+            "death_logs_directory": request.form.get(
+                "death_logs_directory",
+                ""
+            ).strip(),
+            "log_file_pattern": request.form.get(
+                "log_file_pattern",
+                "*.log,*.txt,*.csv,*.json"
+            ).strip(),
             "auto_reconnect": "auto_reconnect" in request.form,
         })
+
         try:
-            default_port = 22 if settings["protocol"] == "sftp" else 21
-            settings["port"] = max(1, min(int(request.form.get("port", str(default_port))), 65535))
+            settings["port"] = max(
+                1,
+                min(
+                    int(request.form.get("port", "21") or 21),
+                    65535
+                )
+            )
         except ValueError:
-            settings["port"] = 22 if settings["protocol"] == "sftp" else 21
-        for field in ("game_port", "query_port", "rcon_port"):
-            try:
-                value = int(request.form.get(field, "0") or 0)
-                settings[field] = max(0, min(value, 65535))
-            except ValueError:
-                settings[field] = 0
+            settings["port"] = 21
+
         try:
-            settings["poll_interval"] = max(30, min(int(request.form.get("poll_interval", "60")), 900))
+            settings["poll_interval"] = max(
+                30,
+                min(
+                    int(request.form.get("poll_interval", "60") or 60),
+                    900
+                )
+            )
         except ValueError:
             settings["poll_interval"] = 60
+
         try:
-            settings["max_log_files"] = max(1, min(int(request.form.get("max_log_files", "5")), 25))
+            settings["max_log_files"] = max(
+                1,
+                min(
+                    int(request.form.get("max_log_files", "5") or 5),
+                    25
+                )
+            )
         except ValueError:
             settings["max_log_files"] = 5
+
         save_deadside_settings(settings)
         return redirect(url_for("deadside_connection"))
-    return render_template("deadside/connection.html", deadside=settings, deadside_tab="connection")
+
+    return render_template(
+        "deadside/connection.html",
+        deadside=settings,
+        deadside_tab="connection"
+    )
 
 
 @app.route("/integrations/deadside/channels", methods=["GET", "POST"])
