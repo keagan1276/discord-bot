@@ -3102,36 +3102,36 @@ def deadside_killfeed():
 
 
 DEADSIDE_FLAG_PRESETS = [
-    {"value": "🏴‍☠️", "name": "Pirate"},
-    {"value": "🏴", "name": "Black"},
-    {"value": "🏳️", "name": "White"},
-    {"value": "🇬🇧", "name": "United Kingdom"},
-    {"value": "🇺🇸", "name": "United States"},
-    {"value": "🇨🇦", "name": "Canada"},
-    {"value": "🇩🇪", "name": "Germany"},
-    {"value": "🇫🇷", "name": "France"},
-    {"value": "🇮🇹", "name": "Italy"},
-    {"value": "🇪🇸", "name": "Spain"},
-    {"value": "🇵🇹", "name": "Portugal"},
-    {"value": "🇳🇱", "name": "Netherlands"},
-    {"value": "🇧🇪", "name": "Belgium"},
-    {"value": "🇵🇱", "name": "Poland"},
-    {"value": "🇺🇦", "name": "Ukraine"},
-    {"value": "🇷🇺", "name": "Russia"},
-    {"value": "🇸🇪", "name": "Sweden"},
-    {"value": "🇳🇴", "name": "Norway"},
-    {"value": "🇫🇮", "name": "Finland"},
-    {"value": "🇩🇰", "name": "Denmark"},
-    {"value": "🇨🇿", "name": "Czechia"},
-    {"value": "🇦🇹", "name": "Austria"},
-    {"value": "🇨🇭", "name": "Switzerland"},
-    {"value": "🇹🇷", "name": "Türkiye"},
-    {"value": "🇧🇷", "name": "Brazil"},
-    {"value": "🇦🇺", "name": "Australia"},
-    {"value": "🇯🇵", "name": "Japan"},
-    {"value": "🇰🇷", "name": "South Korea"},
-    {"value": "🇨🇳", "name": "China"},
-    {"value": "🇿🇦", "name": "South Africa"},
+    {"value": "flag_01", "image": "/static/images/deadside_flags/flag_01.jpg"},
+    {"value": "flag_02", "image": "/static/images/deadside_flags/flag_02.jpg"},
+    {"value": "flag_03", "image": "/static/images/deadside_flags/flag_03.jpg"},
+    {"value": "flag_04", "image": "/static/images/deadside_flags/flag_04.jpg"},
+    {"value": "flag_05", "image": "/static/images/deadside_flags/flag_05.jpg"},
+    {"value": "flag_06", "image": "/static/images/deadside_flags/flag_06.jpg"},
+    {"value": "flag_07", "image": "/static/images/deadside_flags/flag_07.jpg"},
+    {"value": "flag_08", "image": "/static/images/deadside_flags/flag_08.jpg"},
+    {"value": "flag_09", "image": "/static/images/deadside_flags/flag_09.jpg"},
+    {"value": "flag_10", "image": "/static/images/deadside_flags/flag_10.jpg"},
+    {"value": "flag_11", "image": "/static/images/deadside_flags/flag_11.jpg"},
+    {"value": "flag_12", "image": "/static/images/deadside_flags/flag_12.jpg"},
+    {"value": "flag_13", "image": "/static/images/deadside_flags/flag_13.jpg"},
+    {"value": "flag_14", "image": "/static/images/deadside_flags/flag_14.jpg"},
+    {"value": "flag_15", "image": "/static/images/deadside_flags/flag_15.jpg"},
+    {"value": "flag_16", "image": "/static/images/deadside_flags/flag_16.jpg"},
+    {"value": "flag_17", "image": "/static/images/deadside_flags/flag_17.jpg"},
+    {"value": "flag_18", "image": "/static/images/deadside_flags/flag_18.jpg"},
+    {"value": "flag_19", "image": "/static/images/deadside_flags/flag_19.jpg"},
+    {"value": "flag_20", "image": "/static/images/deadside_flags/flag_20.jpg"},
+    {"value": "flag_21", "image": "/static/images/deadside_flags/flag_21.jpg"},
+    {"value": "flag_22", "image": "/static/images/deadside_flags/flag_22.jpg"},
+    {"value": "flag_23", "image": "/static/images/deadside_flags/flag_23.jpg"},
+    {"value": "flag_24", "image": "/static/images/deadside_flags/flag_24.jpg"},
+    {"value": "flag_25", "image": "/static/images/deadside_flags/flag_25.jpg"},
+    {"value": "flag_26", "image": "/static/images/deadside_flags/flag_26.jpg"},
+    {"value": "flag_27", "image": "/static/images/deadside_flags/flag_27.jpg"},
+    {"value": "flag_28", "image": "/static/images/deadside_flags/flag_28.jpg"},
+    {"value": "flag_29", "image": "/static/images/deadside_flags/flag_29.jpg"},
+    {"value": "flag_30", "image": "/static/images/deadside_flags/flag_30.jpg"},
 ]
 
 
@@ -3150,9 +3150,11 @@ def _normalise_deadside_factions(settings):
         faction.setdefault("leader_id", "")
         faction.setdefault("member_ids", [])
         faction.setdefault("role_id", "")
-        faction.setdefault("flag", "🏴‍☠️")
-        faction.setdefault("flag_name", "Pirate")
+        faction.setdefault("flag", "flag_01")
+        faction.setdefault("flag_image", "/static/images/deadside_flags/flag_01.jpg")
         faction.setdefault("custom_flag_url", "")
+        faction.setdefault("channel_id", "")
+        faction.setdefault("message_id", "")
         faction.setdefault("color", "991111")
         faction.setdefault("description", "")
         faction.setdefault("enabled", True)
@@ -3203,11 +3205,11 @@ def deadside_factions():
             save_deadside_settings(settings)
             return redirect(url_for("deadside_factions"))
 
-        if action in {"create", "update"}:
+        if action in {"create", "update", "publish"}:
             faction_id = request.form.get("faction_id", "").strip()
             target = None
 
-            if action == "update" and faction_id:
+            if action in {"update", "publish"} and faction_id:
                 target = next(
                     (
                         faction
@@ -3224,14 +3226,17 @@ def deadside_factions():
                 }
                 factions.append(target)
 
-            selected_flag = request.form.get("flag", "🏴‍☠️")
+            selected_flag = request.form.get("flag", "flag_01")
             preset = next(
                 (
                     flag
                     for flag in DEADSIDE_FLAG_PRESETS
                     if flag["value"] == selected_flag
                 ),
-                {"value": "🏴‍☠️", "name": "Pirate"}
+                {
+                    "value": "flag_01",
+                    "image": "/static/images/deadside_flags/flag_01.jpg"
+                }
             )
 
             leader_id = request.form.get("leader_id", "").strip()
@@ -3252,7 +3257,9 @@ def deadside_factions():
                 "member_ids": list(dict.fromkeys(member_ids)),
                 "role_id": request.form.get("role_id", "").strip(),
                 "flag": preset["value"],
-                "flag_name": preset["name"],
+                "flag_image": preset["image"],
+                "channel_id": request.form.get("channel_id", "").strip(),
+                "message_id": target.get("message_id", ""),
                 "custom_flag_url": request.form.get(
                     "custom_flag_url",
                     ""
@@ -3270,6 +3277,28 @@ def deadside_factions():
 
             settings["factions"] = factions
             save_deadside_settings(settings)
+
+            if action == "publish":
+                publish_result = bot_api_post(
+                    f"/api/deadside/faction/{guild_id}/{target['id']}/publish"
+                )
+                if publish_result and publish_result.get("ok"):
+                    flash(
+                        publish_result.get(
+                            "message",
+                            "Faction embed published."
+                        ),
+                        "success"
+                    )
+                else:
+                    flash(
+                        (publish_result or {}).get(
+                            "error",
+                            "Faction saved, but the embed could not be published."
+                        ),
+                        "error"
+                    )
+
             return redirect(url_for("deadside_factions"))
 
         save_deadside_settings(settings)
@@ -3277,6 +3306,12 @@ def deadside_factions():
 
     members = bot_api_get(f"/api/guild/{guild_id}/members") or []
     roles = bot_api_get(f"/api/guild/{guild_id}/roles") or []
+    channels = bot_api_get(f"/api/guild/{guild_id}/channels") or []
+    text_channels = [
+        channel
+        for channel in channels
+        if channel.get("type") in {"text", "news", "forum"}
+    ]
 
     return render_template(
         "deadside/factions.html",
@@ -3286,6 +3321,7 @@ def deadside_factions():
         flag_presets=DEADSIDE_FLAG_PRESETS,
         members=members,
         roles=roles,
+        channels=text_channels,
         deadside_tab="factions",
     )
 

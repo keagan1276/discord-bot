@@ -6,11 +6,11 @@
   <div class="panel-heading">
     <div><span class="panel-icon">⚔️</span><h2>Faction settings</h2></div>
   </div>
-  <form method="post" class="deadside-form faction-settings-form">
+  <form method="post" class="deadside-form">
     <input type="hidden" name="action" value="settings">
     <div class="deadside-check-grid">
       <label class="toggle-row"><input type="checkbox" name="factions_enabled" {% if faction_settings.enabled %}checked{% endif %}><span>Enable factions</span></label>
-      <label class="toggle-row"><input type="checkbox" name="allow_multiple_memberships" {% if faction_settings.allow_multiple_memberships %}checked{% endif %}><span>Allow members in multiple factions</span></label>
+      <label class="toggle-row"><input type="checkbox" name="allow_multiple_memberships" {% if faction_settings.allow_multiple_memberships %}checked{% endif %}><span>Allow multiple faction memberships</span></label>
       <label class="toggle-row"><input type="checkbox" name="show_flags_in_killfeed" {% if faction_settings.show_flags_in_killfeed %}checked{% endif %}><span>Show flags in killfeed</span></label>
       <label class="toggle-row"><input type="checkbox" name="show_faction_names_in_killfeed" {% if faction_settings.show_faction_names_in_killfeed %}checked{% endif %}><span>Show faction names in killfeed</span></label>
     </div>
@@ -26,29 +26,25 @@
 
     <form method="post" class="deadside-form" id="faction-form" autocomplete="off">
       <input type="hidden" name="action" id="faction-action" value="create">
-      <input type="hidden" name="faction_id" id="faction-id" value="">
+      <input type="hidden" name="faction_id" id="faction-id">
 
       <label>Faction name<input name="faction_name" id="faction-name" maxlength="80" required></label>
 
-      <label>
-        Faction leader
-        <select name="leader_id" id="faction-leader">
-          <option value="">Select leader</option>
-          {% for member in members if not member.bot %}
-          <option value="{{ member.id }}">{{ member.name }} ({{ member.username }})</option>
-          {% endfor %}
-        </select>
-      </label>
+      <div class="form-group member-picker" id="leader-picker">
+        <label>Faction leader</label>
+        <input type="search" class="member-search" placeholder="Type a Discord name..." autocomplete="off">
+        <div class="member-suggestions"></div>
+        <div class="member-chips"></div>
+        <input type="hidden" name="leader_id" class="single-member-value">
+      </div>
 
-      <label>
-        Faction members
-        <select name="member_ids" id="faction-members" multiple size="10">
-          {% for member in members if not member.bot %}
-          <option value="{{ member.id }}">{{ member.name }} ({{ member.username }})</option>
-          {% endfor %}
-        </select>
-      </label>
-      <p class="deadside-help">Hold Ctrl on Windows or Cmd on Mac to select multiple members.</p>
+      <div class="form-group member-picker" id="members-picker">
+        <label>Faction members</label>
+        <input type="search" class="member-search" placeholder="Type Discord names and click to add..." autocomplete="off">
+        <div class="member-suggestions"></div>
+        <div class="member-chips"></div>
+        <div class="member-hidden-inputs"></div>
+      </div>
 
       <label>
         Linked Discord role
@@ -60,26 +56,36 @@
         </select>
       </label>
 
+      <label>
+        Faction details channel
+        <select name="channel_id" id="faction-channel">
+          <option value="">Choose a Discord channel</option>
+          {% for channel in channels %}
+          <option value="{{ channel.id }}">#{{ channel.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
       <div class="form-group">
-        <label>Faction flag</label>
-        <div class="faction-flag-grid">
+        <label>Deadside faction flag</label>
+        <div class="deadside-image-flag-grid">
           {% for flag in flag_presets %}
-          <label class="faction-flag-option" title="{{ flag.name }}">
+          <label class="deadside-image-flag">
             <input type="radio" name="flag" value="{{ flag.value }}" {% if loop.first %}checked{% endif %}>
-            <span class="faction-flag-emoji">{{ flag.value }}</span>
-            <small>{{ flag.name }}</small>
+            <img src="{{ flag.image }}" alt="Deadside faction flag {{ loop.index }}" loading="lazy">
           </label>
           {% endfor %}
         </div>
       </div>
 
-      <label>Custom flag image URL<input type="url" name="custom_flag_url" id="faction-custom-flag" placeholder="https://example.com/flag.png"></label>
+      <label>Custom flag image URL (optional)<input type="url" name="custom_flag_url" id="faction-custom-flag" placeholder="https://example.com/custom-flag.png"></label>
       <label>Faction colour<input type="color" name="color" id="faction-color" value="#991111"></label>
-      <label>Description<textarea name="description" id="faction-description" maxlength="500" placeholder="Faction description"></textarea></label>
+      <label>Description<textarea name="description" id="faction-description" maxlength="500"></textarea></label>
       <label class="toggle-row"><input type="checkbox" name="faction_enabled" id="faction-enabled" checked><span>Faction enabled</span></label>
 
       <div class="faction-form-actions">
-        <button type="submit" class="primary-button">Save faction</button>
+        <button type="submit" class="primary-button" data-action="create">Save faction</button>
+        <button type="submit" class="secondary-button" data-action="publish">Save &amp; publish embed</button>
         <button type="button" class="secondary-button" id="cancel-faction-edit" hidden>Cancel edit</button>
       </div>
     </form>
@@ -97,11 +103,7 @@
       <article class="faction-card" data-faction='{{ faction|tojson|forceescape }}'>
         <div class="faction-card-header">
           <div class="faction-card-flag">
-            {% if faction.custom_flag_url %}
-            <img src="{{ faction.custom_flag_url }}" alt="{{ faction.flag_name }}">
-            {% else %}
-            <span>{{ faction.flag }}</span>
-            {% endif %}
+            <img src="{{ faction.custom_flag_url or faction.flag_image }}" alt="Faction flag">
           </div>
           <div>
             <h3>{{ faction.name }}</h3>
@@ -119,16 +121,29 @@
 
         <dl class="faction-meta">
           <div><dt>Leader</dt><dd>{{ leader.name }}</dd></div>
-          <div><dt>Flag</dt><dd>{{ faction.flag_name }}</dd></div>
-          <div><dt>Role</dt><dd>{% set role_name = namespace(value='Not linked') %}{% for role in roles %}{% if role.id|string == faction.role_id|string %}{% set role_name.value = role.name %}{% endif %}{% endfor %}{{ role_name.value }}</dd></div>
+          <div><dt>Channel</dt><dd>{% set channel_name = namespace(value='Not selected') %}{% for channel in channels %}{% if channel.id|string == faction.channel_id|string %}{% set channel_name.value = '#' ~ channel.name %}{% endif %}{% endfor %}{{ channel_name.value }}</dd></div>
+          <div><dt>Embed</dt><dd>{{ 'Published' if faction.message_id else 'Not published' }}</dd></div>
         </dl>
 
-        {% if faction.description %}
-        <p class="faction-description">{{ faction.description }}</p>
-        {% endif %}
+        {% if faction.description %}<p class="faction-description">{{ faction.description }}</p>{% endif %}
 
         <div class="faction-card-actions">
           <button type="button" class="secondary-button edit-faction">Edit</button>
+          <form method="post">
+            <input type="hidden" name="action" value="publish">
+            <input type="hidden" name="faction_id" value="{{ faction.id }}">
+            <input type="hidden" name="faction_name" value="{{ faction.name }}">
+            <input type="hidden" name="leader_id" value="{{ faction.leader_id }}">
+            {% for member_id in faction.member_ids %}<input type="hidden" name="member_ids" value="{{ member_id }}">{% endfor %}
+            <input type="hidden" name="role_id" value="{{ faction.role_id }}">
+            <input type="hidden" name="channel_id" value="{{ faction.channel_id }}">
+            <input type="hidden" name="flag" value="{{ faction.flag }}">
+            <input type="hidden" name="custom_flag_url" value="{{ faction.custom_flag_url }}">
+            <input type="hidden" name="color" value="{{ faction.color }}">
+            <input type="hidden" name="description" value="{{ faction.description }}">
+            {% if faction.enabled %}<input type="hidden" name="faction_enabled" value="1">{% endif %}
+            <button type="submit" class="primary-button">Publish embed</button>
+          </form>
           <form method="post" onsubmit="return confirm('Delete this faction?');">
             <input type="hidden" name="action" value="delete">
             <input type="hidden" name="faction_id" value="{{ faction.id }}">
@@ -139,62 +154,150 @@
       {% endfor %}
     </div>
     {% else %}
-    <div class="empty-state">
-      <span>🏴</span>
-      <h3>No factions yet</h3>
-      <p>Create your first Deadside faction using the form.</p>
-    </div>
+    <div class="empty-state"><span>🏴</span><h3>No factions yet</h3><p>Create your first faction.</p></div>
     {% endif %}
   </section>
 </div>
 
 <script>
 (() => {
+  const members = {{ members|tojson }};
   const form = document.getElementById("faction-form");
+  const actionField = document.getElementById("faction-action");
+  const idField = document.getElementById("faction-id");
   const heading = document.getElementById("faction-editor-heading");
-  const action = document.getElementById("faction-action");
-  const id = document.getElementById("faction-id");
-  const name = document.getElementById("faction-name");
-  const leader = document.getElementById("faction-leader");
-  const members = document.getElementById("faction-members");
-  const role = document.getElementById("faction-role");
-  const customFlag = document.getElementById("faction-custom-flag");
-  const color = document.getElementById("faction-color");
-  const description = document.getElementById("faction-description");
-  const enabled = document.getElementById("faction-enabled");
   const cancel = document.getElementById("cancel-faction-edit");
+
+  function memberLabel(member) {
+    return `${member.name} (${member.username})`;
+  }
+
+  function setupPicker(root, multiple) {
+    const search = root.querySelector(".member-search");
+    const suggestions = root.querySelector(".member-suggestions");
+    const chips = root.querySelector(".member-chips");
+    const singleValue = root.querySelector(".single-member-value");
+    const hiddenInputs = root.querySelector(".member-hidden-inputs");
+    let selected = [];
+
+    function render() {
+      chips.innerHTML = "";
+      if (hiddenInputs) hiddenInputs.innerHTML = "";
+
+      selected.forEach(id => {
+        const member = members.find(item => String(item.id) === String(id));
+        if (!member) return;
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "member-chip";
+        chip.innerHTML = `<img src="${member.avatar_url}" alt=""><span>${member.name}</span><b>×</b>`;
+        chip.addEventListener("click", () => {
+          selected = selected.filter(value => String(value) !== String(id));
+          render();
+        });
+        chips.appendChild(chip);
+
+        if (hiddenInputs) {
+          const input = document.createElement("input");
+          input.type = "hidden";
+          input.name = "member_ids";
+          input.value = id;
+          hiddenInputs.appendChild(input);
+        }
+      });
+
+      if (singleValue) singleValue.value = selected[0] || "";
+    }
+
+    function showSuggestions(query) {
+      suggestions.innerHTML = "";
+      const q = query.trim().toLowerCase();
+      if (!q) {
+        suggestions.hidden = true;
+        return;
+      }
+
+      const matches = members
+        .filter(member => !member.bot)
+        .filter(member => !selected.map(String).includes(String(member.id)))
+        .filter(member => memberLabel(member).toLowerCase().includes(q))
+        .slice(0, 8);
+
+      matches.forEach(member => {
+        const row = document.createElement("button");
+        row.type = "button";
+        row.className = "member-suggestion";
+        row.innerHTML = `<img src="${member.avatar_url}" alt=""><span><strong>${member.name}</strong><small>${member.username}</small></span>`;
+        row.addEventListener("click", () => {
+          selected = multiple ? [...selected, String(member.id)] : [String(member.id)];
+          search.value = "";
+          suggestions.hidden = true;
+          render();
+        });
+        suggestions.appendChild(row);
+      });
+      suggestions.hidden = matches.length === 0;
+    }
+
+    search.addEventListener("input", () => showSuggestions(search.value));
+    document.addEventListener("click", event => {
+      if (!root.contains(event.target)) suggestions.hidden = true;
+    });
+
+    return {
+      set(values) {
+        selected = (values || []).map(String);
+        render();
+      },
+      reset() {
+        selected = [];
+        search.value = "";
+        suggestions.hidden = true;
+        render();
+      }
+    };
+  }
+
+  const leaderPicker = setupPicker(document.getElementById("leader-picker"), false);
+  const membersPicker = setupPicker(document.getElementById("members-picker"), true);
+
+  form.querySelectorAll("[data-action]").forEach(button => {
+    button.addEventListener("click", () => {
+      actionField.value = button.dataset.action === "publish"
+        ? "publish"
+        : (idField.value ? "update" : "create");
+    });
+  });
 
   function resetEditor() {
     form.reset();
-    action.value = "create";
-    id.value = "";
+    actionField.value = "create";
+    idField.value = "";
     heading.textContent = "Create faction";
     cancel.hidden = true;
-    color.value = "#991111";
-    enabled.checked = true;
+    leaderPicker.reset();
+    membersPicker.reset();
+    document.getElementById("faction-color").value = "#991111";
+    document.getElementById("faction-enabled").checked = true;
   }
 
   document.querySelectorAll(".edit-faction").forEach(button => {
     button.addEventListener("click", () => {
-      const card = button.closest(".faction-card");
-      const data = JSON.parse(card.dataset.faction);
-      action.value = "update";
-      id.value = data.id || "";
-      name.value = data.name || "";
-      leader.value = data.leader_id || "";
-      role.value = data.role_id || "";
-      customFlag.value = data.custom_flag_url || "";
-      color.value = "#" + (data.color || "991111").replace("#", "");
-      description.value = data.description || "";
-      enabled.checked = data.enabled !== false;
+      const data = JSON.parse(button.closest(".faction-card").dataset.faction);
+      idField.value = data.id || "";
+      actionField.value = "update";
+      document.getElementById("faction-name").value = data.name || "";
+      document.getElementById("faction-role").value = data.role_id || "";
+      document.getElementById("faction-channel").value = data.channel_id || "";
+      document.getElementById("faction-custom-flag").value = data.custom_flag_url || "";
+      document.getElementById("faction-color").value = "#" + (data.color || "991111").replace("#", "");
+      document.getElementById("faction-description").value = data.description || "";
+      document.getElementById("faction-enabled").checked = data.enabled !== false;
+      leaderPicker.set(data.leader_id ? [data.leader_id] : []);
+      membersPicker.set(data.member_ids || []);
 
-      [...members.options].forEach(option => {
-        option.selected = (data.member_ids || []).map(String).includes(String(option.value));
-      });
-
-      const flagInput = [...form.querySelectorAll('input[name="flag"]')]
-        .find(input => input.value === data.flag);
-      if (flagInput) flagInput.checked = true;
+      const flag = form.querySelector(`input[name="flag"][value="${CSS.escape(data.flag || "flag_01")}"]`);
+      if (flag) flag.checked = true;
 
       heading.textContent = "Edit faction";
       cancel.hidden = false;

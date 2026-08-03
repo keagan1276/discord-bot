@@ -390,6 +390,130 @@ def api_member_role(guild_id):
             }
         ), 500
 
+
+
+async def _publish_deadside_faction_embed(guild_id, faction_id):
+    root = _read_config(DEADSIDE_FILE, {"servers": {}})
+    settings = root.get("servers", {}).get(str(guild_id), {})
+    factions = settings.get("factions", [])
+
+    faction = next(
+        (
+            item
+            for item in factions
+            if str(item.get("id")) == str(faction_id)
+        ),
+        None
+    )
+    if faction is None:
+        raise ValueError("Faction not found")
+
+    channel_id = str(faction.get("channel_id", "")).strip()
+    if not channel_id.isdigit():
+        raise ValueError("Choose a faction details channel first")
+
+    guild = bot.get_guild(int(guild_id))
+    if guild is None:
+        raise ValueError("Discord server not found")
+
+    channel = guild.get_channel(int(channel_id))
+    if channel is None or not hasattr(channel, "send"):
+        raise ValueError("Faction details channel not found")
+
+    leader_id = str(faction.get("leader_id", "")).strip()
+    member_ids = [str(value) for value in faction.get("member_ids", [])]
+
+    leader = guild.get_member(int(leader_id)) if leader_id.isdigit() else None
+    leader_text = leader.mention if leader else "Not selected"
+
+    member_mentions = []
+    for member_id in member_ids:
+        member = guild.get_member(int(member_id)) if member_id.isdigit() else None
+        member_mentions.append(member.mention if member else f"<@{member_id}>")
+
+    role_id = str(faction.get("role_id", "")).strip()
+    role = guild.get_role(int(role_id)) if role_id.isdigit() else None
+    role_text = role.mention if role else "Not linked"
+
+    try:
+        colour = int(str(faction.get("color", "991111")).replace("#", ""), 16)
+    except ValueError:
+        colour = 0x991111
+
+    embed = discord.Embed(
+        title=f"🏴 {faction.get('name', 'Deadside Faction')}",
+        description=(
+            str(faction.get("description", "")).strip()
+            or "Deadside faction details"
+        ),
+        colour=colour
+    )
+    embed.add_field(name="Faction Leader", value=leader_text, inline=False)
+    embed.add_field(
+        name=f"Faction Members ({len(member_mentions)})",
+        value="\n".join(member_mentions) if member_mentions else "No members selected",
+        inline=False
+    )
+    embed.add_field(name="Faction Role", value=role_text, inline=False)
+    embed.set_footer(text="Pirates Bot • Deadside Factions")
+
+    custom_flag_url = str(faction.get("custom_flag_url", "")).strip()
+    if custom_flag_url:
+        embed.set_thumbnail(url=custom_flag_url)
+
+    message = None
+    message_id = str(faction.get("message_id", "")).strip()
+    if message_id.isdigit():
+        try:
+            message = await channel.fetch_message(int(message_id))
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            message = None
+
+    if message is None:
+        message = await channel.send(embed=embed)
+    else:
+        await message.edit(embed=embed)
+
+    faction["message_id"] = str(message.id)
+    faction["channel_id"] = str(channel.id)
+
+    temporary_file = f"{DEADSIDE_FILE}.tmp"
+    with open(temporary_file, "w", encoding="utf-8") as file:
+        json.dump(root, file, indent=4, ensure_ascii=False)
+    os.replace(temporary_file, DEADSIDE_FILE)
+
+    return {
+        "ok": True,
+        "message": f"Faction embed published in #{channel.name}",
+        "channel_id": str(channel.id),
+        "message_id": str(message.id),
+    }
+
+
+@app.route(
+    "/api/deadside/faction/<int:guild_id>/<faction_id>/publish",
+    methods=["POST"]
+)
+def api_publish_deadside_faction(guild_id, faction_id):
+    if not dashboard_authorized():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+
+    if not bot.is_ready():
+        return jsonify({"ok": False, "error": "Bot is not ready"}), 503
+
+    future = asyncio.run_coroutine_threadsafe(
+        _publish_deadside_faction_embed(guild_id, faction_id),
+        bot.loop
+    )
+    try:
+        result = future.result(timeout=20)
+        return jsonify(result)
+    except Exception as error:
+        print(f"Faction publish error: {error}")
+        return jsonify({"ok": False, "error": str(error)}), 500
+
+
+
 @app.route("/api/dashboard/apply/<feature>", methods=["POST"])
 def dashboard_apply_feature(feature):
     if not dashboard_authorized():
