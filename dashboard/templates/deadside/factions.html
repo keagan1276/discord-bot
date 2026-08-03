@@ -66,17 +66,27 @@
         </select>
       </label>
 
-      <div class="form-group">
-        <label>Deadside faction flag</label>
-        <div class="deadside-image-flag-grid">
+      <section class="faction-flag-section">
+        <div class="faction-section-heading">
+          <div>
+            <h3>Select faction flag</h3>
+            <p>Choose the Deadside flag used for this faction in the dashboard and Discord embed.</p>
+          </div>
+          <div class="selected-flag-preview">
+            <img id="selected-flag-preview-image" src="/static/images/deadside_flags/flag_01.jpg" alt="Selected faction flag">
+          </div>
+        </div>
+
+        <div class="deadside-image-flag-grid" role="radiogroup" aria-label="Deadside faction flags">
           {% for flag in flag_presets %}
-          <label class="deadside-image-flag">
+          <label class="deadside-image-flag" title="Flag {{ loop.index }}">
             <input type="radio" name="flag" value="{{ flag.value }}" {% if loop.first %}checked{% endif %}>
+            <span class="flag-selection-check">✓</span>
             <img src="{{ flag.image }}" alt="Deadside faction flag {{ loop.index }}" loading="lazy">
           </label>
           {% endfor %}
         </div>
-      </div>
+      </section>
 
       <label>Custom flag image URL (optional)<input type="url" name="custom_flag_url" id="faction-custom-flag" placeholder="https://example.com/custom-flag.png"></label>
       <label>Faction colour<input type="color" name="color" id="faction-color" value="#991111"></label>
@@ -306,6 +316,15 @@
   });
 
   cancel.addEventListener("click", resetEditor);
+
+  const selectedFlagPreview = document.getElementById("selected-flag-preview-image");
+  form.querySelectorAll('input[name="flag"]').forEach(input => {
+    input.addEventListener("change", () => {
+      const image = input.closest(".deadside-image-flag")?.querySelector("img");
+      if (image && selectedFlagPreview) selectedFlagPreview.src = image.src;
+    });
+  });
+
 })();
 </script>
 

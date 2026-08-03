@@ -2609,3 +2609,233 @@ MOBILE SLIDE-OUT SIDEBAR
   .faction-form-actions,.faction-card-actions{flex-direction:column}
   .faction-card-actions form,.faction-card-actions button{width:100%}
 }
+
+
+/* ===== Searchable faction members and Deadside image flags ===== */
+.member-picker{position:relative}
+.member-suggestions{
+  position:absolute;
+  z-index:90;
+  left:0;
+  right:0;
+  max-height:280px;
+  overflow-y:auto;
+  margin-top:4px;
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:#101419;
+  box-shadow:0 18px 45px rgba(0,0,0,.45);
+}
+.member-suggestions:empty{display:none}
+.member-suggestion{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  width:100%;
+  padding:10px 12px;
+  border:0;
+  border-bottom:1px solid var(--line);
+  background:transparent;
+  color:var(--text);
+  text-align:left;
+  cursor:pointer;
+}
+.member-suggestion:hover{background:rgba(255,255,255,.055)}
+.member-suggestion img,.member-chip img{
+  width:34px;
+  height:34px;
+  border-radius:50%;
+  object-fit:cover;
+}
+.member-suggestion span{display:flex;flex-direction:column}
+.member-suggestion small{color:var(--muted);font-size:10px}
+.member-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:9px}
+.member-chip{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  width:auto!important;
+  min-height:0!important;
+  padding:6px 9px;
+  border:1px solid rgba(213,162,72,.22);
+  border-radius:999px;
+  background:#19150d;
+  color:#f3d49b;
+  cursor:pointer;
+}
+.member-chip img{width:24px;height:24px}
+.member-chip b{font-size:15px}
+.deadside-image-flag-grid{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:10px;
+  max-height:500px;
+  overflow-y:auto;
+  padding:4px;
+}
+.deadside-image-flag{
+  position:relative;
+  display:block!important;
+  margin:0!important;
+  cursor:pointer;
+}
+.deadside-image-flag input{
+  position:absolute;
+  opacity:0;
+  pointer-events:none;
+}
+.deadside-image-flag img{
+  display:block;
+  width:100%;
+  aspect-ratio:18/11;
+  object-fit:cover;
+  border:2px solid transparent;
+  border-radius:10px;
+  background:#0a0c0e;
+  transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease;
+}
+.deadside-image-flag:hover img{transform:translateY(-2px)}
+.deadside-image-flag:has(input:checked) img{
+  border-color:#d5a248;
+  box-shadow:0 0 0 3px rgba(213,162,72,.18);
+}
+.faction-card-flag{width:86px;flex-basis:86px}
+.faction-card-flag img{object-fit:cover}
+@media(max-width:700px){
+  .deadside-image-flag-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+
+/* ===== Deadside faction editor polish ===== */
+.faction-editor-panel{
+  position:static;
+}
+.faction-layout{
+  grid-template-columns:minmax(0,1fr);
+}
+.faction-section-heading{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:18px;
+  margin-bottom:16px;
+}
+.faction-section-heading h3{
+  margin:0 0 6px;
+  font-size:15px;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+.faction-section-heading p{
+  margin:0;
+  color:var(--muted);
+  font-size:11px;
+}
+.selected-flag-preview{
+  flex:0 0 190px;
+  width:190px;
+  padding:7px;
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:#0b0e11;
+}
+.selected-flag-preview img{
+  display:block;
+  width:100%;
+  aspect-ratio:16/10;
+  object-fit:contain;
+  border-radius:8px;
+}
+.faction-flag-section{
+  margin-top:18px;
+  padding:18px;
+  border:1px solid var(--line);
+  border-radius:16px;
+  background:rgba(255,255,255,.015);
+}
+.deadside-image-flag-grid{
+  display:grid;
+  grid-template-columns:repeat(6,minmax(0,1fr));
+  gap:10px;
+  max-height:none;
+  overflow:visible;
+}
+.deadside-image-flag{
+  position:relative;
+  padding:5px;
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;
+  background:#111417;
+  transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease;
+}
+.deadside-image-flag:hover{
+  transform:translateY(-2px);
+  border-color:rgba(255,255,255,.18);
+}
+.deadside-image-flag img{
+  width:100%;
+  aspect-ratio:16/10;
+  object-fit:contain;
+  border:0;
+  border-radius:8px;
+  background:#111214;
+}
+.deadside-image-flag:has(input:checked){
+  border-color:#d64a3f;
+  box-shadow:0 0 0 2px rgba(214,74,63,.18);
+}
+.deadside-image-flag:has(input:checked) img{
+  border:0;
+  box-shadow:none;
+}
+.flag-selection-check{
+  position:absolute;
+  top:9px;
+  right:9px;
+  z-index:2;
+  display:grid;
+  place-items:center;
+  width:24px;
+  height:24px;
+  border-radius:50%;
+  background:#e44236;
+  color:#fff;
+  font-size:13px;
+  font-weight:800;
+  opacity:0;
+  transform:scale(.7);
+  transition:.16s ease;
+}
+.deadside-image-flag:has(input:checked) .flag-selection-check{
+  opacity:1;
+  transform:scale(1);
+}
+.faction-form-actions{
+  position:sticky;
+  bottom:12px;
+  z-index:30;
+  justify-content:flex-end;
+  padding:12px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:rgba(13,16,19,.94);
+  backdrop-filter:blur(12px);
+}
+.member-chips{
+  margin-top:10px;
+}
+.member-chip{
+  border-radius:10px;
+}
+.faction-card{
+  background:linear-gradient(145deg,rgba(18,22,26,.96),rgba(10,12,15,.96));
+}
+@media(max-width:1200px){
+  .deadside-image-flag-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
+@media(max-width:760px){
+  .faction-section-heading{flex-direction:column}
+  .selected-flag-preview{width:100%;flex-basis:auto}
+  .deadside-image-flag-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .faction-form-actions{position:static}
+}
