@@ -522,7 +522,7 @@ def dashboard_apply_feature(feature):
     allowed = {
         "welcome", "tickets", "moderation", "embeds",
         "reaction_roles", "rules", "settings", "economy",
-        "polls", "giveaways", "deadside"
+        "polls", "giveaways", "deadside", "dayz"
     }
     if feature not in allowed:
         return jsonify({"error": "Unknown feature"}), 404
@@ -598,6 +598,13 @@ DEADSIDE_STATS_FILE = os.path.join(BASE_DIR, "deadside_stats.json")
 DEADSIDE_PLAYERS_FILE = os.path.join(BASE_DIR, "deadside_players.json")
 DEADSIDE_BOUNTIES_FILE = os.path.join(BASE_DIR, "deadside_bounties.json")
 DEADSIDE_SESSIONS_FILE = os.path.join(BASE_DIR, "deadside_sessions.json")
+DAYZ_FILE = os.path.join(BASE_DIR, "dayz.json")
+DAYZ_STATE_FILE = os.path.join(BASE_DIR, "dayz_state.json")
+DAYZ_STATS_FILE = os.path.join(BASE_DIR, "dayz_stats.json")
+DAYZ_PLAYERS_FILE = os.path.join(BASE_DIR, "dayz_players.json")
+DAYZ_BOUNTIES_FILE = os.path.join(BASE_DIR, "dayz_bounties.json")
+DAYZ_SHOP_FILE = os.path.join(BASE_DIR, "dayz_shop.json")
+DAYZ_SPAWN_QUEUE_FILE = os.path.join(BASE_DIR, "dayz_spawn_queue.json")
 TRANSCRIPTS_FOLDER = os.path.join(BASE_DIR, "ticket_transcripts")
 os.makedirs(TRANSCRIPTS_FOLDER, exist_ok=True)
 
@@ -615,6 +622,7 @@ FEATURE_FILES = {
     "polls": POLL_FILE,
     "giveaways": GIVEAWAY_FILE,
     "deadside": DEADSIDE_FILE,
+    "dayz": DAYZ_FILE,
 }
 
 
@@ -626,6 +634,19 @@ def dashboard_get_deadside_settings(guild_id):
     settings = dict(data.get("servers", {}).get(str(guild_id), {}) or {})
     settings["password_configured"] = bool(settings.get("password"))
     settings.pop("password", None)
+    return jsonify({"ok": True, "settings": settings})
+
+
+@app.route("/api/dashboard/settings/dayz/<guild_id>", methods=["GET"])
+def dashboard_get_dayz_settings(guild_id):
+    if not dashboard_authorized():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    data = _read_config(DAYZ_FILE, {"servers": {}})
+    settings = dict(data.get("servers", {}).get(str(guild_id), {}) or {})
+    settings["api_token_configured"] = bool(settings.get("nitrado_api_token"))
+    settings["ftp_password_configured"] = bool(settings.get("ftp_password"))
+    settings.pop("nitrado_api_token", None)
+    settings.pop("ftp_password", None)
     return jsonify({"ok": True, "settings": settings})
 
 
@@ -657,6 +678,22 @@ def dashboard_save_feature(feature):
         if not submitted_password and existing.get("password"):
             payload["password"] = existing["password"]
         payload.pop("password_configured", None)
+        servers[guild_id] = payload
+        payload = root
+
+    if feature == "dayz":
+        guild_id = str(payload.get("guild_id", "")).strip()
+        if not guild_id.isdigit():
+            return jsonify({"ok": False, "error": "A valid guild_id is required"}), 400
+        root = _read_config(DAYZ_FILE, {"servers": {}})
+        servers = root.setdefault("servers", {})
+        existing = servers.get(guild_id, {}) if isinstance(servers.get(guild_id), dict) else {}
+        if not str(payload.get("nitrado_api_token", "")) and existing.get("nitrado_api_token"):
+            payload["nitrado_api_token"] = existing["nitrado_api_token"]
+        if not str(payload.get("ftp_password", "")) and existing.get("ftp_password"):
+            payload["ftp_password"] = existing["ftp_password"]
+        payload.pop("api_token_configured", None)
+        payload.pop("ftp_password_configured", None)
         servers[guild_id] = payload
         payload = root
 
@@ -5382,6 +5419,220 @@ async def deadside_session_alias(interaction: discord.Interaction):
 tree.add_command(ds_group)
 
 
+
+# =================== DAYZ / NITRADO INTEGRATION ===================
+def _dz_read(path, default):
+    data = _read_config(path, default)
+    return data if isinstance(data, dict) else default.copy()
+
+def _dz_servers():
+    r=_dz_read(DAYZ_FILE,{"servers":{}}); r.setdefault("servers",{}); return r["servers"]
+
+def _dz_stats():
+    r=_dz_read(DAYZ_STATS_FILE,{"servers":{}}); r.setdefault("servers",{}); return r
+
+def _dz_state():
+    r=_dz_read(DAYZ_STATE_FILE,{"servers":{}}); r.setdefault("servers",{}); return r
+
+def _dz_players():
+    r=_dz_read(DAYZ_PLAYERS_FILE,{"guilds":{}}); r.setdefault("guilds",{}); return r
+
+def _dz_bounties():
+    r=_dz_read(DAYZ_BOUNTIES_FILE,{"guilds":{}}); r.setdefault("guilds",{}); return r
+
+def _dz_shop():
+    r=_dz_read(DAYZ_SHOP_FILE,{"guilds":{}}); r.setdefault("guilds",{}); return r
+
+def _dz_queue():
+    r=_dz_read(DAYZ_SPAWN_QUEUE_FILE,{"guilds":{}}); r.setdefault("guilds",{}); return r
+
+def _dz_config(guild_id): return _dz_servers().get(str(guild_id),{}) or {}
+
+def _dz_api(config, path):
+    token=str(config.get("nitrado_api_token","")).strip()
+    if not token: raise RuntimeError("Nitrado API token is not configured.")
+    req=urllib.request.Request(
+        f"{str(config.get('nitrado_api_base','https://api.nitrado.net')).rstrip('/')}{path}",
+        headers={"Authorization":f"Bearer {token}","Accept":"application/json","User-Agent":"PiratesBot-DayZ/1.0"})
+    with urllib.request.urlopen(req,timeout=20) as response:
+        return json.loads(response.read().decode("utf-8",errors="replace"))
+
+def _dz_test_nitrado(config):
+    sid=str(config.get("nitrado_service_id","")).strip()
+    if not sid.isdigit(): raise RuntimeError("Enter a valid Nitrado service ID.")
+    return _dz_api(config,f"/services/{sid}/gameservers")
+
+def _dz_fetch_log(config):
+    host=str(config.get("ftp_host","")).strip(); user=str(config.get("ftp_username","")).strip()
+    password=str(config.get("ftp_password","")); path=str(config.get("admin_log_path","")).strip()
+    if not all((host,user,password,path)): raise RuntimeError("Nitrado FTPS host, username, password and admin log path are required.")
+    ftp=ftplib.FTP_TLS(timeout=25); ftp.connect(host,int(config.get("ftp_port",21) or 21)); ftp.login(user,password); ftp.prot_p()
+    buf=io.BytesIO()
+    try: ftp.retrbinary(f"RETR {path}",buf.write)
+    finally:
+        try: ftp.quit()
+        except Exception: pass
+    return buf.getvalue().decode("utf-8",errors="replace")
+
+_DZ_KILL=re.compile(r'Player\s+"(?P<victim>[^"]+)".*?id=(?P<victim_id>[^,\)\s]+).*?pos=<(?P<vx>-?\d+(?:\.\d+)?),\s*(?P<vz>-?\d+(?:\.\d+)?),\s*(?P<vy>-?\d+(?:\.\d+)?)>.*?killed by\s+"(?P<killer>[^"]+)".*?id=(?P<killer_id>[^,\)\s]+).*?pos=<(?P<kx>-?\d+(?:\.\d+)?),\s*(?P<kz>-?\d+(?:\.\d+)?),\s*(?P<ky>-?\d+(?:\.\d+)?)>(?:.*?with\s+(?P<weapon>.+?)\s+from\s+(?P<distance>\d+(?:\.\d+)?)\s+meters)?',re.I)
+_DZ_DEATH=re.compile(r'Player\s+"(?P<victim>[^"]+)".*?id=(?P<victim_id>[^,\)\s]+).*?pos=<(?P<vx>-?\d+(?:\.\d+)?),\s*(?P<vz>-?\d+(?:\.\d+)?),\s*(?P<vy>-?\d+(?:\.\d+)?)>.*?(?P<reason>killed by Infected|committed suicide|bled out|died\.)',re.I)
+_DZ_POS=re.compile(r'Player\s+"(?P<name>[^"]+)"\s*\(id=(?P<guid>[^,\)\s]+)[,\s]+pos=<(?P<x>-?\d+(?:\.\d+)?),\s*(?P<z>-?\d+(?:\.\d+)?),\s*(?P<y>-?\d+(?:\.\d+)?)>',re.I)
+
+def _dz_parse(raw):
+    events=[]; positions={}
+    for line in raw.splitlines():
+        line=line.strip()
+        if not line: continue
+        p=_DZ_POS.search(line)
+        if p:
+            g=p.groupdict(); positions[g["guid"]]={"name":g["name"],"guid":g["guid"],"x":float(g["x"]),"z":float(g["z"]),"y":float(g["y"]),"updated_at":time.time()}
+        m=_DZ_KILL.search(line)
+        if m:
+            g=m.groupdict(); events.append({"id":hashlib.sha256(line.encode()).hexdigest(),"type":"kill","killer":g["killer"],"killer_guid":g["killer_id"],"victim":g["victim"],"victim_guid":g["victim_id"],"weapon":(g.get("weapon") or "Unknown").strip(),"distance":float(g.get("distance") or 0),"killer_pos":{"x":float(g["kx"]),"z":float(g["kz"]),"y":float(g["ky"])},"victim_pos":{"x":float(g["vx"]),"z":float(g["vz"]),"y":float(g["vy"])},"raw":line}); continue
+        d=_DZ_DEATH.search(line)
+        if d:
+            g=d.groupdict(); events.append({"id":hashlib.sha256(line.encode()).hexdigest(),"type":"death","victim":g["victim"],"victim_guid":g["victim_id"],"reason":g["reason"],"victim_pos":{"x":float(g["vx"]),"z":float(g["vz"]),"y":float(g["vy"])},"raw":line})
+    return events,positions
+
+def _dz_link(guild_id, discord_id=None, guid=None, gamertag=None):
+    root=_dz_players(); guild=root["guilds"].setdefault(str(guild_id),{"users":{}}); users=guild.setdefault("users",{})
+    if discord_id is not None: return users.get(str(discord_id))
+    for uid,r in users.items():
+        if guid and str(r.get("guid","")).casefold()==str(guid).casefold(): return uid,r
+        if gamertag and str(r.get("gamertag","")).casefold()==str(gamertag).casefold(): return uid,r
+    return None,None
+
+def _dz_add_money(uid, amount):
+    users=get_bank(); uid=str(uid); users.setdefault(uid,{"wallet":0,"bank":0,"last_daily":None}); users[uid]["wallet"]=int(users[uid].get("wallet",0))+max(0,int(amount)); save_json("bank.json",users)
+
+def _dz_take_money(uid, amount):
+    users=get_bank(); uid=str(uid); users.setdefault(uid,{"wallet":0,"bank":0,"last_daily":None}); amount=max(0,int(amount))
+    if int(users[uid].get("wallet",0))<amount: return False
+    users[uid]["wallet"]-=amount; save_json("bank.json",users); return True
+
+def _dz_update_stats(root,gid,event):
+    server=root["servers"].setdefault(str(gid),{"players":{},"positions":{}}); players=server.setdefault("players",{})
+    def rec(name,guid): return players.setdefault(name,{"guid":guid,"kills":0,"deaths":0,"streak":0,"best_streak":0,"longest_kill":0,"weapons":{}})
+    if event["type"]=="kill":
+        k=rec(event["killer"],event.get("killer_guid","")); v=rec(event["victim"],event.get("victim_guid","")); k["kills"]+=1; k["streak"]+=1; k["best_streak"]=max(k["best_streak"],k["streak"]); k["longest_kill"]=max(float(k.get("longest_kill",0)),float(event.get("distance",0))); w=k.setdefault("weapons",{}); w[event.get("weapon","Unknown")]=int(w.get(event.get("weapon","Unknown"),0))+1; v["deaths"]+=1; v["streak"]=0
+    else:
+        v=rec(event["victim"],event.get("victim_guid","")); v["deaths"]+=1; v["streak"]=0
+
+async def _dz_post(config,event):
+    ch=_find_text_channel(config.get("killfeed_channel" if event["type"]=="kill" else "deathfeed_channel"))
+    if not ch: return
+    colour=parse_colour(config.get("embed_color","991111"))
+    if event["type"]=="kill":
+        e=discord.Embed(title=str(config.get("killfeed_title","☠️ DayZ Killfeed"))[:256],description=f"**{discord.utils.escape_markdown(event['killer'])}** killed **{discord.utils.escape_markdown(event['victim'])}**",colour=colour,timestamp=datetime.now(timezone.utc))
+        if config.get("show_weapon",True): e.add_field(name="Weapon",value=str(event.get("weapon","Unknown"))[:1024])
+        if config.get("show_distance",True) and event.get("distance"): e.add_field(name="Distance",value=f"{event['distance']:.1f} m")
+        if config.get("show_location",True): p=event.get("victim_pos",{}); e.add_field(name="Location",value=f"X {p.get('x',0):.0f} • Z {p.get('z',0):.0f}",inline=False)
+    else:
+        e=discord.Embed(title=str(config.get("deathfeed_title","💀 DayZ Deathfeed"))[:256],description=f"**{discord.utils.escape_markdown(event['victim'])}** {event.get('reason','died')}",colour=colour,timestamp=datetime.now(timezone.utc)); p=event.get("victim_pos",{}); e.add_field(name="Location",value=f"X {p.get('x',0):.0f} • Z {p.get('z',0):.0f}",inline=False)
+    e.set_footer(text=str(config.get("server_name","DayZ Server"))[:2048]); await ch.send(embed=e)
+
+async def _dz_economy(gid,config,event):
+    if event.get("type")!="kill": return
+    killer_id,_=_dz_link(gid,guid=event.get("killer_guid"),gamertag=event.get("killer"))
+    if killer_id and config.get("pay_per_kill_enabled",False): _dz_add_money(killer_id,int(config.get("pay_per_kill",0) or 0))
+    root=_dz_bounties(); guild=root["guilds"].setdefault(str(gid),{"items":[]}); target=str(event.get("victim","")).casefold(); claimed=[b for b in guild.setdefault("items",[]) if b.get("status")=="active" and str(b.get("target_gamertag","")).casefold()==target]
+    if killer_id and claimed:
+        total=sum(int(b.get("amount",0)) for b in claimed); _dz_add_money(killer_id,total)
+        for b in claimed: b.update(status="claimed",claimed_by=str(killer_id),claimed_at=time.time())
+        _write_config(DAYZ_BOUNTIES_FILE,root)
+
+def _dz_dist(a,b): return ((float(a["x"])-float(b["x"]))**2+(float(a["z"])-float(b["z"]))**2)**0.5
+
+async def _dz_radar(gid,config,stats,state):
+    now=time.time(); interval=max(60,int(config.get("radar_interval_seconds",600) or 600))
+    if now-float(state.get("last_radar",0) or 0)<interval: return
+    state["last_radar"]=now; positions=stats["servers"].setdefault(str(gid),{"players":{},"positions":{}}).setdefault("positions",{})
+    if config.get("radar_enabled",False):
+        ch=_find_text_channel(config.get("radar_channel")); center={"x":float(config.get("radar_center_x",0) or 0),"z":float(config.get("radar_center_z",0) or 0)}; radius=max(1,float(config.get("radar_radius",1000) or 1000)); inside=[p for p in positions.values() if _dz_dist(p,center)<=radius]
+        if ch and inside:
+            rid=str(config.get("radar_ping_role","")).strip(); mention=f"<@&{rid}>" if rid.isdigit() else None; lines=[f"• **{discord.utils.escape_markdown(p['name'])}** — X {p['x']:.0f}, Z {p['z']:.0f}" for p in inside[:25]]; await ch.send(content=mention,embed=discord.Embed(title=f"📡 DayZ Radar — {len(inside)} player(s)",description="\n".join(lines),colour=parse_colour(config.get("embed_color","991111"))))
+    ch=_find_text_channel(config.get("bounty_channel")); active=[b for b in _dz_bounties().get("guilds",{}).get(str(gid),{}).get("items",[]) if b.get("status")=="active"]
+    if ch:
+        for b in active:
+            p=next((p for p in positions.values() if str(p.get("name","")).casefold()==str(b.get("target_gamertag","")).casefold()),None)
+            if p: await ch.send(embed=discord.Embed(title="🎯 Active DayZ Bounty Location",description=f"**{discord.utils.escape_markdown(p['name'])}**\nLast known: **X {p['x']:.0f}, Z {p['z']:.0f}**\nBounty: **${int(b.get('amount',0)):,}**\n_Position is based on the latest admin-log player list._",colour=0xD5A248,timestamp=datetime.now(timezone.utc)))
+
+@tasks.loop(seconds=30)
+async def dayz_log_loop():
+    servers=_dz_servers(); state=_dz_state(); stats=_dz_stats(); changed=False; stat_changed=False; now=time.time()
+    for gid,config in servers.items():
+        if not isinstance(config,dict) or not config.get("enabled"): continue
+        s=state["servers"].setdefault(str(gid),{"seen":[],"last_poll":0,"last_radar":0})
+        if now-float(s.get("last_poll",0) or 0)<max(30,int(config.get("poll_interval",60) or 60)): continue
+        s["last_poll"]=now; changed=True
+        try:
+            raw=await asyncio.to_thread(_dz_fetch_log,config); events,positions=_dz_parse(raw); seen=set(s.get("seen",[])); new=[e for e in events if e["id"] not in seen]
+            if not seen and events: new=[]
+            stats["servers"].setdefault(str(gid),{"players":{},"positions":{}}).setdefault("positions",{}).update(positions)
+            for event in new[-50:]: await _dz_post(config,event); _dz_update_stats(stats,gid,event); await _dz_economy(gid,config,event); stat_changed=True
+            await _dz_radar(gid,config,stats,s); s["seen"]=[e["id"] for e in events[-1000:]]; s.pop("last_error",None)
+            if positions: stat_changed=True
+        except Exception as error: s["last_error"]=str(error)[:500]; print(f"DayZ poll error for guild {gid}: {error}")
+    if changed: _write_config(DAYZ_STATE_FILE,state)
+    if stat_changed: _write_config(DAYZ_STATS_FILE,stats)
+
+@dayz_log_loop.before_loop
+async def before_dayz_log_loop(): await bot.wait_until_ready()
+
+dz_group=app_commands.Group(name="dz",description="DayZ server and player commands")
+
+@dz_group.command(name="link",description="Link your Discord account to a DayZ gamertag")
+@app_commands.describe(gamertag="Exact DayZ player name",guid="DayZ GUID if known")
+async def dz_link(interaction:discord.Interaction,gamertag:str,guid:str=""):
+    root=_dz_players(); guild=root["guilds"].setdefault(str(interaction.guild_id),{"users":{}}); guild.setdefault("users",{})[str(interaction.user.id)]={"gamertag":gamertag.strip(),"guid":guid.strip(),"linked_at":time.time(),"discord_name":str(interaction.user)}; _write_config(DAYZ_PLAYERS_FILE,root); await interaction.response.send_message(f"✅ Linked {interaction.user.mention} to **{discord.utils.escape_markdown(gamertag)}**.")
+
+@dz_group.command(name="whereami",description="Show your latest DayZ coordinates")
+async def dz_whereami(interaction:discord.Interaction):
+    link=_dz_link(interaction.guild_id,discord_id=interaction.user.id)
+    if not link: return await interaction.response.send_message("❌ Link first with `/dz link`.",ephemeral=True)
+    positions=_dz_stats().get("servers",{}).get(str(interaction.guild_id),{}).get("positions",{}); pos=positions.get(str(link.get("guid",""))) or next((p for p in positions.values() if str(p.get("name","")).casefold()==str(link.get("gamertag","")).casefold()),None)
+    if not pos: return await interaction.response.send_message("❌ No recent admin-log position is available.",ephemeral=True)
+    await interaction.response.send_message(f"📍 **{pos['name']}** — X **{pos['x']:.0f}**, Z **{pos['z']:.0f}**, Y **{pos['y']:.0f}**")
+
+@dz_group.command(name="stats",description="Show DayZ player statistics")
+@app_commands.describe(member="Optional linked Discord member")
+async def dz_stats(interaction:discord.Interaction,member:discord.Member|None=None):
+    member=member or interaction.user; link=_dz_link(interaction.guild_id,discord_id=member.id)
+    if not link: return await interaction.response.send_message("❌ That member has no linked DayZ gamertag.",ephemeral=True)
+    players=_dz_stats().get("servers",{}).get(str(interaction.guild_id),{}).get("players",{}); data=next((d for n,d in players.items() if n.casefold()==str(link.get("gamertag","")).casefold()),{}); k=int(data.get("kills",0)); d=int(data.get("deaths",0)); weapons=data.get("weapons",{}); fav=max(weapons,key=weapons.get) if weapons else "None"; e=discord.Embed(title=f"🧟 DayZ Stats — {link.get('gamertag')}",colour=0x991111); e.add_field(name="Kills",value=str(k)); e.add_field(name="Deaths",value=str(d)); e.add_field(name="K/D",value=f"{k/max(1,d):.2f}"); e.add_field(name="Current streak",value=str(data.get("streak",0))); e.add_field(name="Best streak",value=str(data.get("best_streak",0))); e.add_field(name="Longest kill",value=f"{float(data.get('longest_kill',0) or 0):.1f} m"); e.add_field(name="Favourite weapon",value=fav,inline=False); await interaction.response.send_message(embed=e)
+
+@dz_group.command(name="leaderboard",description="Show the DayZ kill leaderboard")
+async def dz_leaderboard(interaction:discord.Interaction):
+    players=_dz_stats().get("servers",{}).get(str(interaction.guild_id),{}).get("players",{}); ranked=sorted(players.items(),key=lambda x:(-int(x[1].get("kills",0)),int(x[1].get("deaths",0))))[:10]; lines=[f"**{i}. {discord.utils.escape_markdown(n)}** — {int(d.get('kills',0))} kills • {int(d.get('deaths',0))} deaths" for i,(n,d) in enumerate(ranked,1)]; await interaction.response.send_message(embed=discord.Embed(title="🏆 DayZ Leaderboard",description="\n".join(lines) if lines else "No stats yet.",colour=0x991111))
+
+@dz_group.command(name="playerlocations",description="Admin: latest DayZ player locations")
+@app_commands.checks.has_permissions(administrator=True)
+async def dz_playerlocations(interaction:discord.Interaction):
+    pos=_dz_stats().get("servers",{}).get(str(interaction.guild_id),{}).get("positions",{}); lines=[f"**{discord.utils.escape_markdown(p['name'])}** — X {p['x']:.0f}, Z {p['z']:.0f}" for p in list(pos.values())[:40]]; await interaction.response.send_message(embed=discord.Embed(title="📍 Latest DayZ Player Locations",description="\n".join(lines) if lines else "No player-list positions yet.",colour=0xD5A248),ephemeral=True)
+
+@dz_group.command(name="bounty",description="Place a DayZ bounty using your shared wallet")
+@app_commands.describe(gamertag="Target DayZ gamertag",amount="Bounty amount")
+async def dz_bounty(interaction:discord.Interaction,gamertag:str,amount:int):
+    cfg=_dz_config(interaction.guild_id); lo=max(1,int(cfg.get("minimum_bounty",100) or 100)); hi=max(lo,int(cfg.get("maximum_bounty",10000) or 10000))
+    if not lo<=amount<=hi: return await interaction.response.send_message(f"❌ Bounty must be between ${lo:,} and ${hi:,}.",ephemeral=True)
+    if not _dz_take_money(interaction.user.id,amount): return await interaction.response.send_message("❌ Not enough money in your shared wallet.",ephemeral=True)
+    root=_dz_bounties(); guild=root["guilds"].setdefault(str(interaction.guild_id),{"items":[]}); guild.setdefault("items",[]).append({"id":secrets.token_urlsafe(8),"creator_id":str(interaction.user.id),"target_gamertag":gamertag.strip(),"amount":int(amount),"status":"active","created_at":time.time()}); _write_config(DAYZ_BOUNTIES_FILE,root); await interaction.response.send_message(f"🎯 **${amount:,}** bounty placed on **{discord.utils.escape_markdown(gamertag)}**.")
+
+@dz_group.command(name="bounties",description="List active DayZ bounties")
+async def dz_bounties(interaction:discord.Interaction):
+    active=[b for b in _dz_bounties().get("guilds",{}).get(str(interaction.guild_id),{}).get("items",[]) if b.get("status")=="active"]; lines=[f"🎯 **{discord.utils.escape_markdown(str(b.get('target_gamertag')))}** — **${int(b.get('amount',0)):,}**" for b in active[:20]]; await interaction.response.send_message(embed=discord.Embed(title="DayZ Bounties",description="\n".join(lines) if lines else "No active bounties.",colour=0xD5A248))
+
+@dz_group.command(name="buy",description="Buy a DayZ shop item using the shared economy")
+@app_commands.describe(item_key="Shop item key")
+async def dz_buy(interaction:discord.Interaction,item_key:str):
+    shop=_dz_shop(); guild=shop["guilds"].setdefault(str(interaction.guild_id),{"items":[],"vehicles":[]}); item=next((i for i in guild.get("items",[]) if str(i.get("key"))==item_key and i.get("enabled",True)),None)
+    if not item: return await interaction.response.send_message("❌ Shop item not found.",ephemeral=True)
+    price=max(0,int(item.get("price",0)))
+    if not _dz_take_money(interaction.user.id,price): return await interaction.response.send_message("❌ Not enough wallet balance.",ephemeral=True)
+    q=_dz_queue(); g=q["guilds"].setdefault(str(interaction.guild_id),{"requests":[]}); g.setdefault("requests",[]).append({"id":secrets.token_urlsafe(8),"type":"item_delivery","discord_id":str(interaction.user.id),"class_name":item.get("class_name"),"display_name":item.get("display_name"),"quantity":int(item.get("quantity",1)),"x":item.get("x"),"z":item.get("z"),"y":item.get("y",0),"price":price,"created_at":time.time(),"status":"queued"}); _write_config(DAYZ_SPAWN_QUEUE_FILE,q); await interaction.response.send_message(f"✅ Purchased **{item.get('display_name',item_key)}** for **${price:,}**. Delivery queued.")
+
+tree.add_command(dz_group)
+
 async def _publish_deadside_leaderboard(guild_id, config, stats_root, force=False):
     if not config.get("leaderboard_enabled", True):
         return
@@ -5520,6 +5771,16 @@ async def before_deadside_killfeed_loop():
 
 
 async def apply_dashboard_feature(feature):
+    if feature == "dayz":
+        servers = _dz_servers()
+        enabled = [cfg for cfg in servers.values() if isinstance(cfg, dict) and cfg.get("enabled")]
+        for config in enabled:
+            await asyncio.to_thread(_dz_test_nitrado, config)
+            await asyncio.to_thread(_dz_fetch_log, config)
+        if enabled and not dayz_log_loop.is_running():
+            dayz_log_loop.start()
+        return {"message": f"DayZ configured for {len(enabled)} server(s)"}
+
     if feature == "deadside":
         servers = _deadside_servers()
         enabled = [cfg for cfg in servers.values() if isinstance(cfg, dict) and cfg.get("enabled")]
@@ -5852,6 +6113,9 @@ async def on_ready():
 
     if not deadside_killfeed_loop.is_running():
         deadside_killfeed_loop.start()
+
+    if not dayz_log_loop.is_running():
+        dayz_log_loop.start()
 
     print(f"✅ Logged in as {bot.user}")
     print(

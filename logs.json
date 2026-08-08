@@ -42,18 +42,6 @@
                     "before": "Kr\u012bpten\u2020",
                     "after": "."
                 }
-            },
-            {
-                "id": "3a00084844d0f9bd",
-                "type": "member_leave",
-                "timestamp": 1785404663.9334352,
-                "data": {
-                    "user_id": "472334350017495042",
-                    "user_name": "brathuhn6133",
-                    "display_name": "brathuhn6133",
-                    "joined_at": "2026-07-30T06:48:34.964000+00:00",
-                    "bot": false
-                }
             }
         ]
     }

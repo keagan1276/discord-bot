@@ -647,6 +647,7 @@ ROLE_MANAGER_FILE = os.path.join(BASE_DIR,"role_manager.json")
 LOGS_FILE = os.path.join(BASE_DIR, "logs.json")
 PERMISSIONS_FILE = os.path.join(BASE_DIR, "permission_manager.json")
 DEADSIDE_FILE = os.path.join(BASE_DIR, "deadside.json")
+DAYZ_FILE = os.path.join(BASE_DIR, "dayz.json")
 TRANSCRIPTS_FOLDER = os.path.join(BASE_DIR, "ticket_transcripts")
 
 def load_or_create_json(path, default):
@@ -2746,9 +2747,9 @@ def rules():
 
             if section_key and section_key not in sections:
                 sections[section_key] = {
-                    "button_label": "",
+                    "button_label": "New Rules",
                     "button_emoji": "📜",
-                    "title": "",
+                    "title": "📜 New Rules",
                     "description": "Add your rules here.",
                     "color": "991111",
                     "image_url": "",
@@ -3464,6 +3465,108 @@ def deadside_advanced():
         return redirect(url_for("deadside_advanced"))
     return render_template("deadside/advanced.html", deadside=settings, deadside_tab="advanced")
 
+
+
+# =================== DAYZ DASHBOARD ===================
+DAYZ_DEFAULTS={"enabled":False,"guild_id":"","server_name":"My DayZ Server","platform":"pc","map_name":"Chernarus","map_size":15360,"nitrado_api_base":"https://api.nitrado.net","nitrado_service_id":"","nitrado_api_token":"","ftp_host":"","ftp_port":21,"ftp_username":"","ftp_password":"","admin_log_path":"","poll_interval":60,"killfeed_channel":"","deathfeed_channel":"","bounty_channel":"","killfeed_title":"☠️ DayZ Killfeed","deathfeed_title":"💀 DayZ Deathfeed","embed_color":"991111","show_weapon":True,"show_distance":True,"show_location":True,"pay_per_kill_enabled":False,"pay_per_kill":25,"minimum_bounty":100,"maximum_bounty":10000,"radar_enabled":False,"radar_channel":"","radar_ping_role":"","radar_center_x":7500,"radar_center_z":7500,"radar_radius":1000,"radar_interval_seconds":600,"factions":[]}
+
+def load_dayz_settings():
+    gid=str(session.get("selected_guild_id",""))
+    if not gid:return "",DAYZ_DEFAULTS.copy()
+    s=DAYZ_DEFAULTS.copy();s["guild_id"]=gid;remote=bot_api_get(f"/api/dashboard/settings/dayz/{gid}") or {}
+    if isinstance(remote,dict) and isinstance(remote.get("settings"),dict):s.update(remote["settings"])
+    return gid,s
+
+def save_dayz_settings(s):
+    result=save_and_apply_feature("dayz",s)
+    if result and result.get("ok"):flash(result.get("message","DayZ settings saved."),"success")
+    else:flash(f"DayZ settings were not applied: {(result or {}).get('error','Unknown error')}","warning")
+    return result
+
+def require_dayz_guild():
+    gid,s=load_dayz_settings()
+    if not gid:return None,None
+    if not can_manage_guild(gid):abort(403)
+    return gid,s
+
+@app.route("/integrations/dayz")
+def dayz_overview():
+    gid,s=require_dayz_guild()
+    if not gid:return redirect(url_for("servers"))
+    return render_template("dayz/overview.html",dayz=s,dayz_tab="overview")
+
+@app.route("/integrations/dayz/connection",methods=["GET","POST"])
+def dayz_connection():
+    gid,s=require_dayz_guild()
+    if not gid:return redirect(url_for("servers"))
+    if request.method=="POST":
+        s.update({"enabled":"enabled" in request.form,"guild_id":gid,"server_name":request.form.get("server_name","My DayZ Server").strip(),"platform":request.form.get("platform","pc").strip(),"map_name":request.form.get("map_name","Chernarus").strip(),"nitrado_service_id":request.form.get("nitrado_service_id","").strip(),"nitrado_api_token":request.form.get("nitrado_api_token",""),"ftp_host":request.form.get("ftp_host","").strip(),"ftp_username":request.form.get("ftp_username","").strip(),"ftp_password":request.form.get("ftp_password",""),"admin_log_path":request.form.get("admin_log_path","").strip()})
+        for key,default,lo,hi in (("ftp_port",21,1,65535),("poll_interval",60,30,900),("map_size",15360,1000,100000)):
+            try:s[key]=max(lo,min(int(request.form.get(key,default) or default),hi))
+            except ValueError:s[key]=default
+        save_dayz_settings(s);return redirect(url_for("dayz_connection"))
+    return render_template("dayz/connection.html",dayz=s,dayz_tab="connection")
+
+@app.route("/integrations/dayz/feeds",methods=["GET","POST"])
+def dayz_feeds():
+    gid,s=require_dayz_guild();channels=bot_api_get(f"/api/guild/{gid}/channels") or []; channels=[c for c in channels if c.get("type") in {"text","news","forum"}]
+    if request.method=="POST":
+        for k in ("killfeed_channel","deathfeed_channel","bounty_channel"):s[k]=request.form.get(k,"").strip()
+        for k in ("show_weapon","show_distance","show_location"):s[k]=k in request.form
+        s["killfeed_title"]=request.form.get("killfeed_title","☠️ DayZ Killfeed").strip();s["deathfeed_title"]=request.form.get("deathfeed_title","💀 DayZ Deathfeed").strip();s["embed_color"]=request.form.get("embed_color","991111").replace("#","").strip();save_dayz_settings(s);return redirect(url_for("dayz_feeds"))
+    return render_template("dayz/feeds.html",dayz=s,channels=channels,dayz_tab="feeds")
+
+@app.route("/integrations/dayz/radar",methods=["GET","POST"])
+def dayz_radar():
+    gid,s=require_dayz_guild();channels=bot_api_get(f"/api/guild/{gid}/channels") or [];roles=bot_api_get(f"/api/guild/{gid}/roles") or [];channels=[c for c in channels if c.get("type") in {"text","news","forum"}]
+    if request.method=="POST":
+        s["radar_enabled"]="radar_enabled" in request.form;s["radar_channel"]=request.form.get("radar_channel","").strip();s["radar_ping_role"]=request.form.get("radar_ping_role","").strip()
+        for k,d,lo,hi in (("radar_center_x",7500,0,100000),("radar_center_z",7500,0,100000),("radar_radius",1000,1,50000),("radar_interval_seconds",600,60,3600)):
+            try:s[k]=max(lo,min(int(request.form.get(k,d) or d),hi))
+            except ValueError:s[k]=d
+        save_dayz_settings(s);return redirect(url_for("dayz_radar"))
+    return render_template("dayz/radar.html",dayz=s,channels=channels,roles=roles,dayz_tab="radar")
+
+@app.route("/integrations/dayz/economy",methods=["GET","POST"])
+def dayz_economy():
+    gid,s=require_dayz_guild()
+    if request.method=="POST":
+        s["pay_per_kill_enabled"]="pay_per_kill_enabled" in request.form
+        for k,d,lo,hi in (("pay_per_kill",25,0,1000000),("minimum_bounty",100,1,100000000),("maximum_bounty",10000,1,100000000)):
+            try:s[k]=max(lo,min(int(request.form.get(k,d) or d),hi))
+            except ValueError:s[k]=d
+        s["maximum_bounty"]=max(s["minimum_bounty"],s["maximum_bounty"]);save_dayz_settings(s);return redirect(url_for("dayz_economy"))
+    return render_template("dayz/economy.html",dayz=s,dayz_tab="economy")
+
+@app.route("/integrations/dayz/shop",methods=["GET","POST"])
+def dayz_shop():
+    gid,s=require_dayz_guild();path=os.path.join(BASE_DIR,"dayz_shop.json");root=load_or_create_json(path,{"guilds":{}});shop=root.setdefault("guilds",{}).setdefault(str(gid),{"items":[],"vehicles":[]})
+    if request.method=="POST":
+        a=request.form.get("action","")
+        if a=="add_item":shop["items"].append({"key":request.form.get("key","").strip(),"display_name":request.form.get("display_name","").strip(),"class_name":request.form.get("class_name","").strip(),"price":max(0,int(request.form.get("price",0) or 0)),"quantity":max(1,int(request.form.get("quantity",1) or 1)),"x":float(request.form.get("x",0) or 0),"z":float(request.form.get("z",0) or 0),"y":float(request.form.get("y",0) or 0),"enabled":True})
+        elif a=="add_vehicle":shop["vehicles"].append({"id":secrets.token_urlsafe(8),"display_name":request.form.get("vehicle_name","").strip(),"class_name":request.form.get("vehicle_class","").strip(),"x":float(request.form.get("vehicle_x",0) or 0),"z":float(request.form.get("vehicle_z",0) or 0),"y":float(request.form.get("vehicle_y",0) or 0),"restart_lifetime":max(1,int(request.form.get("restart_lifetime",1) or 1)),"enabled":True})
+        elif a=="delete_item":shop["items"]=[i for i in shop["items"] if i.get("key")!=request.form.get("key","")]
+        elif a=="delete_vehicle":shop["vehicles"]=[v for v in shop["vehicles"] if v.get("id")!=request.form.get("vehicle_id","")]
+        with open(path,"w",encoding="utf-8") as f:json.dump(root,f,indent=4,ensure_ascii=False)
+        return redirect(url_for("dayz_shop"))
+    return render_template("dayz/shop.html",dayz=s,shop=shop,dayz_tab="shop")
+
+@app.route("/integrations/dayz/factions",methods=["GET","POST"])
+def dayz_factions():
+    gid,s=require_dayz_guild();factions=s.setdefault("factions",[]);roles=bot_api_get(f"/api/guild/{gid}/roles") or []
+    if request.method=="POST":
+        if request.form.get("action")=="add":factions.append({"id":secrets.token_urlsafe(8),"name":request.form.get("name","").strip(),"leader":request.form.get("leader","").strip(),"members":[x.strip() for x in request.form.get("members","").splitlines() if x.strip()],"role_id":request.form.get("role_id","").strip(),"color":request.form.get("color","991111").replace("#","")})
+        elif request.form.get("action")=="delete":s["factions"]=[f for f in factions if f.get("id")!=request.form.get("faction_id","")]
+        save_dayz_settings(s);return redirect(url_for("dayz_factions"))
+    return render_template("dayz/factions.html",dayz=s,factions=s.get("factions",[]),roles=roles,dayz_tab="factions")
+
+@app.route("/integrations/dayz/map")
+def dayz_map():
+    gid,s=require_dayz_guild();stats=load_or_create_json(os.path.join(BASE_DIR,"dayz_stats.json"),{"servers":{}});b=load_or_create_json(os.path.join(BASE_DIR,"dayz_bounties.json"),{"guilds":{}});positions=list(stats.get("servers",{}).get(str(gid),{}).get("positions",{}).values());active=[x for x in b.get("guilds",{}).get(str(gid),{}).get("items",[]) if x.get("status")=="active"];return render_template("dayz/map.html",dayz=s,positions=positions,bounties=active,dayz_tab="map")
+
+@app.route("/integrations/dayz/stats")
+def dayz_stats_dashboard():
+    gid,s=require_dayz_guild();stats=load_or_create_json(os.path.join(BASE_DIR,"dayz_stats.json"),{"servers":{}});players=stats.get("servers",{}).get(str(gid),{}).get("players",{});ranked=sorted(players.items(),key=lambda x:-int(x[1].get("kills",0)));return render_template("dayz/stats.html",dayz=s,players=ranked,dayz_tab="stats")
 
 @app.route("/deadside")
 def deadside_legacy_redirect():
