@@ -2411,6 +2411,7 @@ DAYZ:
 
 ADMIN:
 - `/help setup` posts the help guide and is administrator-only.
+- `/force link game:<Deadside|DayZ> member:@User gamertag:<name> guid:<optional>` lets an administrator override/link a player's game account.
 - `/roleadd` and `/roleremove` manage roles.
 - `/setreactionrole` sets a reaction role.
 - `/setwelcome` and `/removewelcome` manage welcome setup where available.
@@ -2418,6 +2419,62 @@ ADMIN:
 - `/removeallmsgs` clears messages and is administrator-only.
 - Economy admin commands may include `/addmoney`, `/removemoney`,
   `/economywipe`, and `/money` when present in the live command list.
+
+
+
+BOT SETUP / TROUBLESHOOTING:
+- Pirates Bot dashboard: https://amusing-inspiration-production-eab1.up.railway.app/
+- Administrators should sign in with Discord, open Manage Servers, invite Pirates
+  Bot if needed, then select the server they want to manage.
+- A user must own the server or have Manage Server / Administrator permission
+  for Discord to report it as manageable.
+- After inviting Pirates Bot, return to Manage Servers and refresh/re-login if
+  the server still shows the bot as not installed.
+- The bot invite must include both the `bot` and `applications.commands` scopes.
+- The bot should have the Discord permissions required by the features being
+  used. If channels or roles are missing in selectors, first check that the bot
+  can view those channels/roles and that the correct server is selected.
+- Dashboard settings are server-specific. Always make sure the correct Discord
+  server is selected before changing settings.
+- Important Railway environment variable names can include:
+  `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`,
+  `DISCORD_REDIRECT_URI`, `DASHBOARD_API_KEY`, `BOT_API_URL`,
+  `FLASK_SECRET_KEY`, `BOT_OWNER_ID`, and `OPENAI_API_KEY`.
+- Never ask the user to paste secret values into Discord. Explain where the
+  variable belongs, but never reveal or request the actual secret.
+- `DASHBOARD_API_KEY` must match between the bot service and dashboard service.
+- `BOT_API_URL` on the dashboard service must point at the running bot API
+  service address.
+- If Railway says a Python file has an error, suggest checking the deployment
+  traceback and running `python -m py_compile bot.py` or
+  `python -m py_compile dashboard/app.py` locally.
+- If a dashboard page returns Internal Server Error, ask for the Railway
+  traceback and identify the exact template/route error instead of guessing.
+- If slash commands do not appear after a deployment, first confirm the bot
+  started successfully and command sync completed.
+
+DEADSIDE SETUP:
+- Open the Deadside integration in the dashboard after selecting the correct
+  Discord server.
+- Configure the server connection values required by that integration.
+- Configure Discord destination channels for feeds, logs, radar, factions and
+  other enabled systems.
+- Deadside gamertags can normally be linked by the user with `/ds link`.
+- Administrators can force a link with `/force link game:deadside`.
+- Deadside shares the same Pirates Bot economy rather than creating a separate
+  wallet.
+
+DAYZ SETUP:
+- Open the DayZ integration in the dashboard after selecting the correct server.
+- Configure the Nitrado service information and FTPS/admin-log access required
+  by the DayZ integration.
+- DayZ player-location features depend on position information being available
+  in the DayZ admin logs.
+- Configure killfeed, deathfeed, radar, economy, shop, factions and other
+  features from the DayZ dashboard tabs.
+- DayZ gamertags can normally be linked by the user with `/dz link`.
+- Administrators can force a link with `/force link game:dayz`.
+- DayZ uses the shared Pirates Bot economy.
 
 DASHBOARD:
 - Sign in with Discord.
@@ -5436,6 +5493,146 @@ def _deadside_profile_stats(guild_id, gamertag):
         if str(name).casefold() == wanted:
             return name, data
     return gamertag, {}
+
+
+
+
+# ------------------- ADMIN FORCE PLAYER LINKING -------------------
+force_group = app_commands.Group(
+    name="force",
+    description="Administrator override tools"
+)
+
+
+@force_group.command(
+    name="link",
+    description="Admin: force-link a Discord member to a Deadside or DayZ gamertag"
+)
+@app_commands.checks.has_permissions(administrator=True)
+@app_commands.describe(
+    game="Choose which game integration to link",
+    member="Discord member to link",
+    gamertag="Exact in-game gamertag",
+    guid="Optional DayZ GUID"
+)
+@app_commands.choices(
+    game=[
+        app_commands.Choice(name="Deadside", value="deadside"),
+        app_commands.Choice(name="DayZ", value="dayz"),
+    ]
+)
+async def force_link(
+    interaction: discord.Interaction,
+    game: app_commands.Choice[str],
+    member: discord.Member,
+    gamertag: str,
+    guid: str = ""
+):
+    if interaction.guild is None:
+        return await interaction.response.send_message(
+            "❌ Use this command inside a Discord server.",
+            ephemeral=True,
+        )
+
+    gamertag = gamertag.strip()
+    guid = guid.strip()
+
+    if not gamertag or len(gamertag) > 80:
+        return await interaction.response.send_message(
+            "❌ Enter a valid gamertag.",
+            ephemeral=True,
+        )
+
+    if game.value == "deadside":
+        root, guild_data = _deadside_linked_players(interaction.guild_id)
+        users = guild_data.setdefault("users", {})
+
+        # Remove this gamertag from anyone else in this Discord server.
+        duplicate_ids = [
+            discord_id
+            for discord_id, record in users.items()
+            if discord_id != str(member.id)
+            and str(record.get("gamertag", "")).strip().casefold()
+            == gamertag.casefold()
+        ]
+        for discord_id in duplicate_ids:
+            users.pop(discord_id, None)
+
+        previous = users.get(str(member.id), {})
+        users[str(member.id)] = {
+            "gamertag": gamertag,
+            "linked_at": time.time(),
+            "discord_name": str(member),
+            "force_linked": True,
+            "force_linked_by": str(interaction.user.id),
+            "previous_gamertag": previous.get("gamertag", ""),
+        }
+
+        _write_config(DEADSIDE_PLAYERS_FILE, root)
+
+        return await interaction.response.send_message(
+            f"✅ Force-linked {member.mention} to Deadside gamertag "
+            f"**{discord.utils.escape_markdown(gamertag)}**.",
+            ephemeral=True,
+        )
+
+    if game.value == "dayz":
+        root = _dz_players()
+        guild_data = root["guilds"].setdefault(
+            str(interaction.guild_id),
+            {"users": {}}
+        )
+        users = guild_data.setdefault("users", {})
+
+        # Remove this gamertag/GUID from anyone else in this Discord server.
+        duplicate_ids = []
+        for discord_id, record in users.items():
+            if discord_id == str(member.id):
+                continue
+
+            same_gamertag = (
+                str(record.get("gamertag", "")).strip().casefold()
+                == gamertag.casefold()
+            )
+            same_guid = bool(
+                guid
+                and str(record.get("guid", "")).strip().casefold()
+                == guid.casefold()
+            )
+
+            if same_gamertag or same_guid:
+                duplicate_ids.append(discord_id)
+
+        for discord_id in duplicate_ids:
+            users.pop(discord_id, None)
+
+        previous = users.get(str(member.id), {})
+        users[str(member.id)] = {
+            "gamertag": gamertag,
+            "guid": guid,
+            "linked_at": time.time(),
+            "discord_name": str(member),
+            "force_linked": True,
+            "force_linked_by": str(interaction.user.id),
+            "previous_gamertag": previous.get("gamertag", ""),
+            "previous_guid": previous.get("guid", ""),
+        }
+
+        _write_config(DAYZ_PLAYERS_FILE, root)
+
+        guid_text = (
+            f"\nGUID: `{discord.utils.escape_markdown(guid)}`"
+            if guid else ""
+        )
+
+        return await interaction.response.send_message(
+            f"✅ Force-linked {member.mention} to DayZ gamertag "
+            f"**{discord.utils.escape_markdown(gamertag)}**.{guid_text}",
+            ephemeral=True,
+        )
+
+
+tree.add_command(force_group)
 
 
 ds_group = app_commands.Group(
