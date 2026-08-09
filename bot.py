@@ -3228,27 +3228,22 @@ async def create_dashboard_ticket(
             )
         )
 
-    # Put the ticket creator first so staff can immediately see
-    # who owns the ticket in the Discord channel list.
+    # Ticket channels are always named from the member who opened them.
+    # Dashboard channel_prefix is intentionally ignored.
     username = clean_ticket_channel_name(
-        getattr(user, "display_name", None)
-        or getattr(user, "name", None)
+        getattr(user, "name", None)
+        or getattr(user, "display_name", None)
         or f"user-{user.id}"
     )
 
-    # Avoid names such as "ticket-ticket" when the member's
-    # display name already contains the word "ticket".
-    if "ticket" in username.split("-"):
-        channel_name = username
-    else:
-        channel_name = clean_ticket_channel_name(
-            f"{username}-ticket"
-        )
+    channel_name = clean_ticket_channel_name(
+        f"{username}-ticket"
+    )
 
-    # If that channel name already exists, add a short unique suffix.
+    # If the same channel name already exists, add a short unique suffix.
     if discord.utils.get(guild.text_channels, name=channel_name):
         channel_name = clean_ticket_channel_name(
-            f"{channel_name}-{str(user.id)[-4:]}"
+            f"{username}-ticket-{str(user.id)[-4:]}"
         )
 
     try:

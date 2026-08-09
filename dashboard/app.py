@@ -937,6 +937,11 @@ def tickets():
     if not isinstance(ticket["options"], list):
         ticket["options"] = []
 
+    # Legacy cleanup: ticket channel names are controlled by bot.py now.
+    for option in ticket["options"]:
+        if isinstance(option, dict):
+            option.pop("channel_prefix", None)
+
     if request.method == "POST":
         ticket["enabled"] = "enabled" in request.form
         ticket["guild_id"] = str(
@@ -1055,10 +1060,6 @@ def tickets():
                     f"option_staff_role_id_{index}",
                     ""
                 ).strip(),
-                "channel_prefix": request.form.get(
-                    f"option_channel_prefix_{index}",
-                    "ticket"
-                ).strip(),
                 "opening_message": request.form.get(
                     f"option_opening_message_{index}",
                     (
@@ -1082,6 +1083,9 @@ def tickets():
 
         ticket["options"] = options
         ticket["option_count"] = len(options)
+
+        for option in ticket["options"]:
+            option.pop("channel_prefix", None)
 
         with open(TICKET_FILE, "w", encoding="utf-8") as file:
             json.dump(
