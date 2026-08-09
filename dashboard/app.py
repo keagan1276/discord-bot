@@ -479,9 +479,9 @@ def servers():
     
 @app.route("/invite")
 def invite_bot():
-    client_id = str(
-        DISCORD_CLIENT_ID
-    ).strip()
+    """Send an administrator to Discord's proper bot-install flow."""
+    client_id = str(DISCORD_CLIENT_ID).strip()
+    guild_id = str(request.args.get("guild_id", "")).strip()
 
     if not client_id.isdigit():
         return (
@@ -489,21 +489,63 @@ def invite_bot():
             500
         )
 
+    params = {
+        "client_id": client_id,
+        "scope": "bot applications.commands",
+        # Pirates Bot manages channels, roles, messages, embeds and integrations.
+        # Administrator avoids partial installs where dashboard features silently fail.
+        "permissions": "8",
+    }
+
+    if guild_id.isdigit() and can_manage_guild(guild_id):
+        params["guild_id"] = guild_id
+        params["disable_guild_select"] = "true"
+
     return redirect(
-        "https://discord.com/oauth2/authorize"
-        f"?client_id={client_id}"
+        "https://discord.com/oauth2/authorize?"
+        + urlencode(params)
     )
 
-    print(f"BOT INVITE URL: {invite_url}")
 
-    return redirect(invite_url)
+@app.route("/refresh-servers")
+@login_required
+def refresh_servers():
+    """
+    Discord's guild list is captured at login. Re-authenticate so newly-created
+    servers or permission changes appear immediately.
+    """
+    session.clear()
+    return redirect(url_for("login"))
+
+
+
     
     
 @app.route("/select-server/<guild_id>")
 @login_required
 def select_server(guild_id):
     if not can_manage_guild(guild_id):
-        abort(403)
+        flash(
+            "Discord no longer reports that you can manage this server. "
+            "Refresh your server list and sign in again.",
+            "warning",
+        )
+        return redirect(url_for("servers"))
+
+    bot_guilds = bot_api_get("/api/guilds") or []
+    bot_guild_ids = {
+        str(guild.get("id"))
+        for guild in bot_guilds
+        if isinstance(guild, dict)
+    }
+
+    if str(guild_id) not in bot_guild_ids:
+        flash(
+            "Pirates Bot is not connected to that server yet. "
+            "Invite the bot, wait a few seconds, then refresh this page.",
+            "warning",
+        )
+        return redirect(url_for("servers"))
 
     session["selected_guild_id"] = str(guild_id)
     return redirect(url_for("home"))

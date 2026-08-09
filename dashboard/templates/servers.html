@@ -6,233 +6,67 @@
     <title>Select a Server | Pirates Bot</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard-home.css') }}">
     <style>
-        body {
-            margin: 0;
-            min-height: 100vh;
-            background: #080a0c;
-            color: #fff;
-            font-family: Inter, Arial, sans-serif;
-        }
-
-        .server-shell {
-            max-width: 1100px;
-            margin: auto;
-            padding: 48px 24px;
-        }
-
-        .server-top {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-
-        .user-chip {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 10px 14px;
-            border: 1px solid rgba(255,255,255,.1);
-            border-radius: 12px;
-            background: #111417;
-        }
-
-        .user-chip img {
-            width: 42px;
-            height: 42px;
-            border-radius: 50%;
-        }
-
-        .logout {
-            color: #ff8585;
-            text-decoration: none;
-        }
-
-        .owner-link {
-            display: inline-block;
-            margin-right: 15px;
-            color: #e5bd72;
-            text-decoration: none;
-        }
-
-        .server-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit,minmax(250px,1fr));
-            gap: 18px;
-        }
-
-        .server-card {
-            padding: 22px;
-            border: 1px solid rgba(255,255,255,.1);
-            border-radius: 16px;
-            background: linear-gradient(145deg,#15191d,#0d1012);
-            box-shadow: 0 18px 45px rgba(0,0,0,.24);
-        }
-
-        .server-card img,
-        .fallback {
-            width: 72px;
-            height: 72px;
-            border-radius: 18px;
-            object-fit: cover;
-            display: grid;
-            place-items: center;
-            background: #4e1d1d;
-            font-size: 30px;
-        }
-
-        .server-card h2 {
-            margin: 16px 0 7px;
-            font-size: 20px;
-        }
-
-        .server-card p {
-            color: #9ba1a8;
-            min-height: 38px;
-        }
-
-        .manage,
-        .invite {
-            display: block;
-            margin-top: 16px;
-            padding: 12px;
-            border-radius: 9px;
-            text-align: center;
-            text-decoration: none;
-            font-weight: 700;
-        }
-
-        .manage {
-            background: linear-gradient(90deg,#8b2424,#5b1717);
-            color: white;
-        }
-
-        .invite {
-            background: #2a3038;
-            color: #dbe3ec;
-        }
-
-        .invite:hover {
-            background: #37414c;
-        }
+        body { margin:0; min-height:100vh; background:#080a0c; color:#fff; font-family:Inter,Arial,sans-serif; }
+        .server-shell { max-width:1100px; margin:auto; padding:48px 24px; }
+        .server-top { display:flex; justify-content:space-between; align-items:center; gap:20px; margin-bottom:30px; }
+        .user-chip { display:flex; align-items:center; gap:12px; padding:10px 14px; border:1px solid rgba(255,255,255,.1); border-radius:12px; background:#111417; }
+        .user-chip img { width:42px; height:42px; border-radius:50%; }
+        .logout { color:#ff8585; text-decoration:none; }
+        .server-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:18px; }
+        .server-card { padding:22px; border:1px solid rgba(255,255,255,.1); border-radius:16px; background:linear-gradient(145deg,#15191d,#0d1012); box-shadow:0 18px 45px rgba(0,0,0,.24); }
+        .server-card img,.fallback { width:72px; height:72px; border-radius:18px; object-fit:cover; display:grid; place-items:center; background:#4e1d1d; font-size:30px; }
+        .server-card h2 { margin:16px 0 7px; font-size:20px; }
+        .server-card p { color:#9ba1a8; min-height:38px; }
+        .manage,.invite { display:block; margin-top:16px; padding:12px; border-radius:9px; text-align:center; text-decoration:none; font-weight:700; }
+        .manage { background:linear-gradient(90deg,#8b2424,#5b1717); color:#fff; }
+        .invite { background:#2a3038; color:#dbe3ec; }
+        .owner-link { display:inline-block; margin-right:15px; color:#e5bd72; text-decoration:none; }
     </style>
 </head>
-
 <body>
-
 <main class="server-shell">
-
     <div class="server-top">
-
         <div>
-            <p style="color:#dba23f;margin:0 0 8px;">
-                PIRATES BOT FLEET
-            </p>
-
-            <h1 style="margin:0;">
-                Choose a vessel to manage
-            </h1>
+            <p style="color:#dba23f;margin:0 0 8px;">PIRATES BOT FLEET</p>
+            <h1 style="margin:0;">Choose a vessel to manage</h1>
         </div>
-
         <div class="user-chip">
-
             <img src="{{ discord_user_avatar(user) }}" alt="">
-
             <div>
-
-                <strong>
-                    {{ user.global_name or user.username }}
-                </strong>
-
-                <br>
-
-                {% if is_bot_owner %}
-                    <a class="owner-link" href="/owner">
-                        Owner panel
-                    </a>
-                {% endif %}
-
-                <a class="logout" href="/logout">
-                    Log out
-                </a>
-
+                <strong>{{ user.global_name or user.username }}</strong><br>
+                {% if is_bot_owner %}<a class="owner-link" href="/owner">Owner panel</a>{% endif %}
+                <a class="owner-link" href="{{ url_for('refresh_servers') }}">↻ Refresh servers</a>
+                <a class="logout" href="/logout">Log out</a>
             </div>
-
         </div>
-
     </div>
 
     <section class="server-grid">
-
         {% for guild in guilds %}
-
         <article class="server-card">
-
             {% if guild_icon_url(guild) %}
-
                 <img src="{{ guild_icon_url(guild) }}" alt="{{ guild.name }}">
-
             {% else %}
-
-                <div class="fallback">
-                    🏴‍☠️
-                </div>
-
+                <div class="fallback">🏴‍☠️</div>
             {% endif %}
-
-            <h2>
-                {{ guild.name }}
-            </h2>
-
+            <h2>{{ guild.name }}</h2>
             <p>
-
                 {% if guild.bot_installed %}
-
                     Pirates Bot is aboard and ready.
-
                 {% else %}
-
-                    You manage this server, but Pirates Bot has not been invited yet.
-
+                    You manage this server, but Pirates Bot is not connected yet. Invite it, then return here and press Refresh servers.
                 {% endif %}
-
             </p>
-
             {% if guild.bot_installed %}
-
-                <a
-                    class="manage"
-                    href="/select-server/{{ guild.id }}"
-                >
-                    ⚙️ Manage Server
-                </a>
-
+                <a class="manage" href="/select-server/{{ guild.id }}">Manage server</a>
             {% else %}
-
-                <a
-                    class="invite"
-                    href="{{ url_for('invite_bot') }}"
-                    target="_blank"
-                >
-                    ➕ Invite Pirates Bot
-                </a>
-
+                <a class="invite" href="{{ url_for('invite_bot', guild_id=guild.id) }}">➕ Invite Pirates Bot</a>
             {% endif %}
-
         </article>
-
         {% else %}
-
-        <p>
-            You do not own or manage any Discord servers.
-        </p>
-
+        <p>You do not own or manage any Discord servers.</p>
         {% endfor %}
-
     </section>
-
 </main>
-
 </body>
 </html>
