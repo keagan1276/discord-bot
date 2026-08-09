@@ -1,9 +1,18 @@
 (() => {
     const FIELD_TYPES = {
         channel: "channels",
-        channel_id: "channels",
         ticket_channel: "channels",
         log_channel: "channels",
+        killfeed_channel: "channels",
+        leaderboard_channel: "channels",
+        status_channel: "channels",
+        activity_channel: "channels",
+        admin_log_channel: "channels",
+        radar_channel: "channels",
+        deathfeed_channel: "channels",
+        bounty_channel: "channels",
+        faction_channel: "channels",
+        channel_id: "channels",
         menu_channel_id: "channels",
         staff_role_id: "roles",
         role_id: "roles",
@@ -107,7 +116,7 @@
         select.innerHTML = `<option value="">${firstText}</option>`;
 
         items.forEach(item => {
-            if (type === "channels" && item.type && !["text", "news", "forum"].includes(item.type)) {
+            if (type === "channels" && item.type !== undefined && item.type !== null && !["text", "news", "forum", 0, 5, 15, "0", "5", "15"].includes(item.type)) {
                 return;
             }
             const option = document.createElement("option");
@@ -148,7 +157,14 @@
                 guildSelect.appendChild(option);
             });
 
-            if (guilds.length === 1) {
+            const selectedHost = document.querySelector("[data-discord-guild-id]");
+            const selectedGuildId = selectedHost?.dataset.discordGuildId || "";
+            const selectedExists = guilds.some(guild => String(guild.id) === String(selectedGuildId));
+
+            if (selectedGuildId && selectedExists) {
+                guildSelect.value = selectedGuildId;
+                await loadGuildData(selectedGuildId);
+            } else if (guilds.length === 1) {
                 guildSelect.value = guilds[0].id;
                 await loadGuildData(guilds[0].id);
             } else if (!guilds.length) {

@@ -13,5 +13,5 @@
   <a class="{{ 'active' if deadside_tab == 'statistics' else '' }}" href="{{ url_for('deadside_statistics') }}">Players & Economy</a>
   <a class="{{ 'active' if deadside_tab == 'advanced' else '' }}" href="{{ url_for('deadside_advanced') }}">Advanced</a>
 </nav>
-<section class="deadside-page">{% block deadside_content %}{% endblock %}</section>
+<section class="deadside-page" data-discord-guild-id="{{ selected_guild_id or deadside.guild_id or '' }}">{% block deadside_content %}{% endblock %}</section>
 {% endblock %}
