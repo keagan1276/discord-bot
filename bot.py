@@ -2325,7 +2325,7 @@ bot.tree.interaction_check = (
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 PIRATE_AI_MODEL = (
     os.getenv("PIRATE_AI_MODEL", "gemini-3.5-flash-lite").strip()
-    or "gemini-2.5-flash-lite"
+    or "gemini-3.5-flash-lite"
 )
 PIRATE_AI_COOLDOWN = max(
     3,
@@ -2629,8 +2629,8 @@ def _pirate_helper_fallback(question):
 
     return (
         "☠️ **Pirate Helper**\n"
-        "The full AI is temporarily unavailable, but I can still help with "
-        "Pirates Bot commands and setup questions."
+        "I couldn't match that to a built-in Pirates Bot help answer. "
+        "Please try asking again in a moment."
     )
 
 
@@ -2679,31 +2679,32 @@ async def process_pirate_ai_helper(message):
     _pirate_ai_last_used[user_key] = now
 
     history = list(_pirate_history_for(message))
+    answer = ""
+    gemini_succeeded = False
 
     async with message.channel.typing():
-        try:
-            if GEMINI_API_KEY:
+        if GEMINI_API_KEY:
+            try:
                 answer = await asyncio.to_thread(
                     _pirate_gemini_request,
                     question,
                     _pirate_live_commands(),
                     history,
                 )
-            else:
-                answer = _pirate_helper_fallback(question)
+                gemini_succeeded = bool(answer.strip())
+            except Exception as error:
+                # Log the real error in Railway, but do not send an extra
+                # "full AI unavailable" message if another answer succeeded.
+                print(f"Pirate Gemini Helper error: {error}")
 
-        except Exception as error:
-            print(f"Pirate Gemini Helper error: {error}")
+        if not gemini_succeeded:
             answer = _pirate_helper_fallback(question)
 
-    # Only remember full Gemini conversations. Fallback error messages should
-    # not become part of the AI's future conversation context.
-    if GEMINI_API_KEY and not answer.startswith(
-        "☠️ **Pirate Helper**\nThe full AI is temporarily unavailable"
-    ):
+    if gemini_succeeded:
         _pirate_remember(message, "user", question)
         _pirate_remember(message, "model", answer)
 
+    # One incoming Pirate message = exactly one Discord reply.
     await message.reply(
         answer,
         mention_author=False,
@@ -3069,11 +3070,19 @@ async def create_dashboard_ticket(
     interaction: discord.Interaction,
     option_index: int
 ):
+    # Discord requires component interactions to be acknowledged quickly.
+    # Creating categories/channels can take longer than the interaction window.
+    if not interaction.response.is_done():
+        await interaction.response.defer(
+            ephemeral=True,
+            thinking=True
+        )
+
     ticket_data = load_ticket_settings()
     options = ticket_data.get("options", [])
 
     if option_index < 0 or option_index >= len(options):
-        await interaction.response.send_message(
+        await interaction.followup.send(
             "❌ This ticket option no longer exists.",
             ephemeral=True
         )
@@ -3082,7 +3091,7 @@ async def create_dashboard_ticket(
     option = options[option_index]
 
     if not option.get("enabled", True):
-        await interaction.response.send_message(
+        await interaction.followup.send(
             "❌ This ticket option is currently disabled.",
             ephemeral=True
         )
@@ -3092,7 +3101,7 @@ async def create_dashboard_ticket(
     user = interaction.user
 
     if guild is None:
-        await interaction.response.send_message(
+        await interaction.followup.send(
             "❌ Tickets can only be opened inside a server.",
             ephemeral=True
         )
@@ -3117,7 +3126,7 @@ async def create_dashboard_ticket(
     )
 
     if existing_ticket:
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"❌ You already have this ticket open: "
             f"{existing_ticket.mention}",
             ephemeral=True
@@ -3152,10 +3161,26 @@ async def create_dashboard_ticket(
         )
 
         if category is None:
-            category = await guild.create_category(
-                category_name,
-                reason="Pirates Bot ticket category"
-            )
+            try:
+                category = await guild.create_category(
+                    category_name,
+                    reason="Pirates Bot ticket category"
+                )
+            except discord.Forbidden:
+                await interaction.followup.send(
+                    "❌ I cannot create the ticket category. "
+                    "Give Pirates Bot **Manage Channels** permission.",
+                    ephemeral=True
+                )
+                return
+            except discord.HTTPException as error:
+                print(f"Ticket category creation error: {error}")
+                await interaction.followup.send(
+                    "❌ Discord would not let me create the ticket category. "
+                    "Please try again.",
+                    ephemeral=True
+                )
+                return
 
     bot_member = guild.me
 
@@ -3213,16 +3238,33 @@ async def create_dashboard_ticket(
         f"{channel_prefix}-{user.display_name}"
     )
 
-    channel = await guild.create_text_channel(
-        name=channel_name,
-        category=category,
-        topic=ticket_topic,
-        overwrites=overwrites,
-        reason=(
-            f"{option.get('name', 'Ticket')} "
-            f"opened by {user}"
+    try:
+        channel = await guild.create_text_channel(
+            name=channel_name,
+            category=category,
+            topic=ticket_topic,
+            overwrites=overwrites,
+            reason=(
+                f"{option.get('name', 'Ticket')} "
+                f"opened by {user}"
+            )
         )
-    )
+    except discord.Forbidden:
+        await interaction.followup.send(
+            "❌ I cannot create the ticket channel. "
+            "Give Pirates Bot **Manage Channels** permission and make sure "
+            "its role can access the selected ticket category.",
+            ephemeral=True
+        )
+        return
+    except discord.HTTPException as error:
+        print(f"Ticket channel creation error: {error}")
+        await interaction.followup.send(
+            "❌ Discord would not let me create the ticket channel. "
+            "Please try again.",
+            ephemeral=True
+        )
+        return
 
     opening_message = str(
         option.get(
@@ -3281,7 +3323,7 @@ async def create_dashboard_ticket(
         view=CloseTicketView()
     )
 
-    await interaction.response.send_message(
+    await interaction.followup.send(
         f"✅ Your ticket was created: "
         f"{channel.mention}",
         ephemeral=True
@@ -3314,10 +3356,25 @@ class TicketButton(discord.ui.Button):
         self,
         interaction: discord.Interaction
     ):
-        await create_dashboard_ticket(
-            interaction,
-            self.option_index
-        )
+        try:
+            await create_dashboard_ticket(
+                interaction,
+                self.option_index
+            )
+        except Exception as error:
+            print(f"Ticket button error: {error}")
+            if interaction.response.is_done():
+                await interaction.followup.send(
+                    "❌ I could not open that ticket. Check the bot's "
+                    "Manage Channels permission and try again.",
+                    ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(
+                    "❌ I could not open that ticket. Check the bot's "
+                    "Manage Channels permission and try again.",
+                    ephemeral=True
+                )
 
 
 class TicketButtonsView(discord.ui.View):
@@ -3408,10 +3465,25 @@ class TicketDropdown(discord.ui.Select):
             )
             return
 
-        await create_dashboard_ticket(
-            interaction,
-            int(selected_value)
-        )
+        try:
+            await create_dashboard_ticket(
+                interaction,
+                int(selected_value)
+            )
+        except Exception as error:
+            print(f"Ticket dropdown error: {error}")
+            if interaction.response.is_done():
+                await interaction.followup.send(
+                    "❌ I could not open that ticket. Check the bot's "
+                    "Manage Channels permission and try again.",
+                    ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(
+                    "❌ I could not open that ticket. Check the bot's "
+                    "Manage Channels permission and try again.",
+                    ephemeral=True
+                )
 
 
 class TicketDropdownView(discord.ui.View):
@@ -4233,50 +4305,84 @@ FLAG_TRANSLATIONS = {
     "🇸🇦": ("AR", "Arabic"),
 }
 
-DEEPL_API_KEY = os.getenv("DEEPL_API_KEY", "").strip()
-DEEPL_API_URL = os.getenv(
-    "DEEPL_API_URL",
-    "https://api-free.deepl.com/v2/translate"
-).strip()
 TRANSLATION_COOLDOWN = {}
 
 
-def _deepl_translate_sync(text: str, target_language: str) -> dict:
-    if not DEEPL_API_KEY:
-        raise RuntimeError("DEEPL_API_KEY is not configured on the bot service.")
+def _gemini_translate_sync(
+    text: str,
+    target_code: str,
+    target_name: str
+) -> dict:
+    if not GEMINI_API_KEY:
+        raise RuntimeError(
+            "GEMINI_API_KEY is not configured on the bot service."
+        )
 
-    body = json.dumps({
-        "text": [text],
-        "target_lang": target_language
+    instruction = (
+        "You are a translation engine for a Discord bot. "
+        f"Translate the supplied message into {target_name} "
+        f"(language code {target_code}). "
+        "Preserve usernames, URLs, emoji, line breaks and formatting where possible. "
+        "Return ONLY the translated message. "
+        "Do not explain the translation and do not add quotation marks."
+    )
+
+    request_body = json.dumps({
+        "systemInstruction": {
+            "parts": [{"text": instruction}]
+        },
+        "contents": [
+            {
+                "role": "user",
+                "parts": [{"text": text}]
+            }
+        ],
+        "generationConfig": {
+            "maxOutputTokens": 1200
+        }
     }).encode("utf-8")
 
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{PIRATE_AI_MODEL}:generateContent"
+    )
+
     api_request = urllib.request.Request(
-        DEEPL_API_URL,
-        data=body,
+        url,
+        data=request_body,
         method="POST",
         headers={
-            "Authorization": f"DeepL-Auth-Key {DEEPL_API_KEY}",
+            "x-goog-api-key": GEMINI_API_KEY,
             "Content-Type": "application/json",
-            "User-Agent": "PiratesBot-Translator/1.0"
+            "User-Agent": "PiratesBot-Gemini-Translator/1.0"
         }
     )
 
     try:
-        with urllib.request.urlopen(api_request, timeout=15) as response:
-            result = json.loads(response.read().decode("utf-8"))
+        with urllib.request.urlopen(api_request, timeout=30) as response:
+            result = json.loads(
+                response.read().decode("utf-8", errors="replace")
+            )
     except urllib.error.HTTPError as error:
         details = error.read().decode("utf-8", errors="replace")
         raise RuntimeError(
-            f"Translation API returned HTTP {error.code}: {details[:300]}"
+            f"Gemini translation returned HTTP {error.code}: "
+            f"{details[:300]}"
         ) from error
     except (urllib.error.URLError, TimeoutError) as error:
-        raise RuntimeError(f"Translation API connection failed: {error}") from error
+        raise RuntimeError(
+            f"Gemini translation connection failed: {error}"
+        ) from error
 
-    translations = result.get("translations", [])
-    if not translations:
-        raise RuntimeError("The translation API returned no translation.")
+    translated_text = _pirate_gemini_extract_text(result).strip()
 
-    return translations[0]
+    if not translated_text:
+        raise RuntimeError("Gemini returned no translation.")
+
+    return {
+        "text": translated_text,
+        "detected_source_language": "AUTO"
+    }
 
 
 async def translate_reacted_message(payload) -> bool:
@@ -4327,9 +4433,10 @@ async def translate_reacted_message(payload) -> bool:
 
     try:
         translated = await asyncio.to_thread(
-            _deepl_translate_sync,
+            _gemini_translate_sync,
             source_text,
-            target_code
+            target_code,
+            target_name
         )
 
         translated_text = str(translated.get("text", "")).strip()
@@ -4348,7 +4455,7 @@ async def translate_reacted_message(payload) -> bool:
             inline=False
         )
         embed.set_footer(
-            text=f"Detected language: {detected} • #{getattr(channel, 'name', 'channel')}"
+            text=f"Translated with Gemini • #{getattr(channel, 'name', 'channel')}"
         )
 
         embed.set_author(
@@ -4366,7 +4473,7 @@ async def translate_reacted_message(payload) -> bool:
         print(f"Translator error: {error}")
         try:
             await message.reply(
-                content=f"❌ Translation failed: {error}",
+                content="❌ Translation failed temporarily. Please try again in a moment.",
                 mention_author=False,
                 allowed_mentions=discord.AllowedMentions.none(),
                 delete_after=15
