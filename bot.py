@@ -3228,15 +3228,24 @@ async def create_dashboard_ticket(
             )
         )
 
-    channel_prefix = clean_ticket_channel_name(
-        option.get("channel_prefix")
-        or option.get("name")
-        or "ticket"
+    # Put the ticket creator first so staff can immediately see
+    # who owns the ticket in the Discord channel list.
+    username = clean_ticket_channel_name(
+        getattr(user, "display_name", None)
+        or getattr(user, "name", None)
+        or f"user-{user.id}"
     )
 
     channel_name = clean_ticket_channel_name(
-        f"{channel_prefix}-{user.display_name}"
+        f"{username}-ticket"
     )
+
+    # If that channel name already exists for another ticket/type,
+    # add a short suffix so Discord channels remain easy to identify.
+    if discord.utils.get(guild.text_channels, name=channel_name):
+        channel_name = clean_ticket_channel_name(
+            f"{username}-ticket-{str(user.id)[-4:]}"
+        )
 
     try:
         channel = await guild.create_text_channel(
