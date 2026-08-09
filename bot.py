@@ -5622,14 +5622,148 @@ async def dz_bounty(interaction:discord.Interaction,gamertag:str,amount:int):
 async def dz_bounties(interaction:discord.Interaction):
     active=[b for b in _dz_bounties().get("guilds",{}).get(str(interaction.guild_id),{}).get("items",[]) if b.get("status")=="active"]; lines=[f"🎯 **{discord.utils.escape_markdown(str(b.get('target_gamertag')))}** — **${int(b.get('amount',0)):,}**" for b in active[:20]]; await interaction.response.send_message(embed=discord.Embed(title="DayZ Bounties",description="\n".join(lines) if lines else "No active bounties.",colour=0xD5A248))
 
-@dz_group.command(name="buy",description="Buy a DayZ shop item using the shared economy")
-@app_commands.describe(item_key="Shop item key")
-async def dz_buy(interaction:discord.Interaction,item_key:str):
-    shop=_dz_shop(); guild=shop["guilds"].setdefault(str(interaction.guild_id),{"items":[],"vehicles":[]}); item=next((i for i in guild.get("items",[]) if str(i.get("key"))==item_key and i.get("enabled",True)),None)
-    if not item: return await interaction.response.send_message("❌ Shop item not found.",ephemeral=True)
-    price=max(0,int(item.get("price",0)))
-    if not _dz_take_money(interaction.user.id,price): return await interaction.response.send_message("❌ Not enough wallet balance.",ephemeral=True)
-    q=_dz_queue(); g=q["guilds"].setdefault(str(interaction.guild_id),{"requests":[]}); g.setdefault("requests",[]).append({"id":secrets.token_urlsafe(8),"type":"item_delivery","discord_id":str(interaction.user.id),"class_name":item.get("class_name"),"display_name":item.get("display_name"),"quantity":int(item.get("quantity",1)),"x":item.get("x"),"z":item.get("z"),"y":item.get("y",0),"price":price,"created_at":time.time(),"status":"queued"}); _write_config(DAYZ_SPAWN_QUEUE_FILE,q); await interaction.response.send_message(f"✅ Purchased **{item.get('display_name',item_key)}** for **${price:,}**. Delivery queued.")
+@dz_group.command(
+    name="buy",
+    description="Buy a DayZ shop item and choose/confirm its drop location"
+)
+@app_commands.describe(
+    item_key="Shop item key from the DayZ online shop",
+    x="Drop X coordinate when custom locations are allowed",
+    z="Drop Z coordinate when custom locations are allowed",
+    y="Drop Y/height coordinate; normally 0"
+)
+async def dz_buy(
+    interaction: discord.Interaction,
+    item_key: str,
+    x: float | None = None,
+    z: float | None = None,
+    y: float = 0.0
+):
+    shop = _dayz_shop()
+    guild = shop["guilds"].setdefault(
+        str(interaction.guild_id),
+        {"items": [], "vehicles": []}
+    )
+
+    item = next(
+        (
+            entry for entry in guild.get("items", [])
+            if str(entry.get("key", "")).casefold() == item_key.strip().casefold()
+            and entry.get("enabled", True)
+        ),
+        None
+    )
+
+    if not item:
+        return await interaction.response.send_message(
+            "❌ Shop item not found. Check the item key on the DayZ online shop.",
+            ephemeral=True
+        )
+
+    allow_custom = bool(item.get("allow_custom_location", False))
+
+    if allow_custom:
+        if x is None or z is None:
+            return await interaction.response.send_message(
+                "❌ This item requires a drop location. Enter both X and Z.",
+                ephemeral=True
+            )
+        drop_x = float(x)
+        drop_z = float(z)
+        drop_y = float(y or 0)
+        location_name = "Custom coordinates"
+    else:
+        try:
+            drop_x = float(item["x"])
+            drop_z = float(item["z"])
+            drop_y = float(item.get("y", 0) or 0)
+        except (KeyError, TypeError, ValueError):
+            return await interaction.response.send_message(
+                "❌ This shop item has no valid delivery coordinates configured.",
+                ephemeral=True
+            )
+        location_name = str(item.get("location_name", "")).strip() or "Configured drop point"
+
+    price = max(0, int(item.get("price", 0) or 0))
+
+    if not _dayz_wallet_take(interaction.user.id, price):
+        return await interaction.response.send_message(
+            "❌ You do not have enough money in your shared economy wallet.",
+            ephemeral=True
+        )
+
+    queue = _dayz_spawn_queue()
+    qguild = queue["guilds"].setdefault(
+        str(interaction.guild_id),
+        {"requests": []}
+    )
+
+    request_id = secrets.token_urlsafe(8)
+    qguild.setdefault("requests", []).append({
+        "id": request_id,
+        "type": "item_delivery",
+        "discord_id": str(interaction.user.id),
+        "discord_name": str(interaction.user),
+        "item_key": str(item.get("key", "")),
+        "class_name": item.get("class_name"),
+        "display_name": item.get("display_name"),
+        "quantity": int(item.get("quantity", 1) or 1),
+        "x": drop_x,
+        "z": drop_z,
+        "y": drop_y,
+        "location_name": location_name,
+        "price": price,
+        "created_at": time.time(),
+        "status": "queued",
+    })
+    _write_config(DAYZ_SPAWN_QUEUE_FILE, queue)
+
+    embed = discord.Embed(
+        title="🛒 DayZ Purchase Queued",
+        description=(
+            f"**{item.get('display_name', item_key)}** × "
+            f"**{int(item.get('quantity', 1) or 1)}**"
+        ),
+        colour=0xD5A248,
+        timestamp=datetime.now(timezone.utc),
+    )
+    embed.add_field(name="Price", value=f"${price:,}", inline=True)
+    embed.add_field(name="Drop point", value=location_name, inline=True)
+    embed.add_field(
+        name="Coordinates",
+        value=f"X **{drop_x:.1f}** • Z **{drop_z:.1f}** • Y **{drop_y:.1f}**",
+        inline=False,
+    )
+    embed.set_footer(text=f"Delivery request: {request_id}")
+
+    await interaction.response.send_message(embed=embed)
+
+
+@tree.command(
+    name="buy",
+    description="Buy a DayZ shop item and set/confirm the drop location"
+)
+@app_commands.describe(
+    item="DayZ shop item key",
+    x="Drop X coordinate if this item allows a custom location",
+    z="Drop Z coordinate if this item allows a custom location",
+    y="Drop Y/height coordinate; normally 0"
+)
+async def dayz_buy_alias(
+    interaction: discord.Interaction,
+    item: str,
+    x: float | None = None,
+    z: float | None = None,
+    y: float = 0.0
+):
+    await dz_buy.callback(
+        interaction,
+        item_key=item,
+        x=x,
+        z=z,
+        y=y
+    )
+
 
 tree.add_command(dz_group)
 

@@ -3538,18 +3538,123 @@ def dayz_economy():
         s["maximum_bounty"]=max(s["minimum_bounty"],s["maximum_bounty"]);save_dayz_settings(s);return redirect(url_for("dayz_economy"))
     return render_template("dayz/economy.html",dayz=s,dayz_tab="economy")
 
-@app.route("/integrations/dayz/shop",methods=["GET","POST"])
+@app.route("/integrations/dayz/shop", methods=["GET", "POST"])
 def dayz_shop():
-    gid,s=require_dayz_guild();path=os.path.join(BASE_DIR,"dayz_shop.json");root=load_or_create_json(path,{"guilds":{}});shop=root.setdefault("guilds",{}).setdefault(str(gid),{"items":[],"vehicles":[]})
-    if request.method=="POST":
-        a=request.form.get("action","")
-        if a=="add_item":shop["items"].append({"key":request.form.get("key","").strip(),"display_name":request.form.get("display_name","").strip(),"class_name":request.form.get("class_name","").strip(),"price":max(0,int(request.form.get("price",0) or 0)),"quantity":max(1,int(request.form.get("quantity",1) or 1)),"x":float(request.form.get("x",0) or 0),"z":float(request.form.get("z",0) or 0),"y":float(request.form.get("y",0) or 0),"enabled":True})
-        elif a=="add_vehicle":shop["vehicles"].append({"id":secrets.token_urlsafe(8),"display_name":request.form.get("vehicle_name","").strip(),"class_name":request.form.get("vehicle_class","").strip(),"x":float(request.form.get("vehicle_x",0) or 0),"z":float(request.form.get("vehicle_z",0) or 0),"y":float(request.form.get("vehicle_y",0) or 0),"restart_lifetime":max(1,int(request.form.get("restart_lifetime",1) or 1)),"enabled":True})
-        elif a=="delete_item":shop["items"]=[i for i in shop["items"] if i.get("key")!=request.form.get("key","")]
-        elif a=="delete_vehicle":shop["vehicles"]=[v for v in shop["vehicles"] if v.get("id")!=request.form.get("vehicle_id","")]
-        with open(path,"w",encoding="utf-8") as f:json.dump(root,f,indent=4,ensure_ascii=False)
+    guild_id, settings = require_dayz_guild()
+    if not guild_id:
+        return redirect(url_for("servers"))
+
+    shop_path = os.path.join(BASE_DIR, "dayz_shop.json")
+    root = load_or_create_json(shop_path, {"guilds": {}})
+    guild_shop = root.setdefault("guilds", {}).setdefault(
+        str(guild_id),
+        {"items": [], "vehicles": []}
+    )
+    guild_shop.setdefault("items", [])
+    guild_shop.setdefault("vehicles", [])
+
+    if request.method == "POST":
+        action = request.form.get("action", "").strip()
+
+        if action in {"add_item", "update_item"}:
+            key = request.form.get("key", "").strip()
+            if not key:
+                flash("Shop item key is required.", "warning")
+                return redirect(url_for("dayz_shop"))
+
+            try:
+                price = max(0, int(request.form.get("price", 0) or 0))
+                quantity = max(1, int(request.form.get("quantity", 1) or 1))
+                x = float(request.form.get("x", 0) or 0)
+                z = float(request.form.get("z", 0) or 0)
+                y = float(request.form.get("y", 0) or 0)
+            except ValueError:
+                flash("Price, quantity and coordinates must be valid numbers.", "warning")
+                return redirect(url_for("dayz_shop"))
+
+            item_data = {
+                "key": key,
+                "display_name": request.form.get("display_name", "").strip(),
+                "class_name": request.form.get("class_name", "").strip(),
+                "category": request.form.get("category", "General").strip() or "General",
+                "description": request.form.get("description", "").strip()[:500],
+                "price": price,
+                "quantity": quantity,
+                "location_name": request.form.get("location_name", "").strip()[:100],
+                "x": x,
+                "z": z,
+                "y": y,
+                "allow_custom_location": "allow_custom_location" in request.form,
+                "enabled": "enabled" in request.form,
+            }
+
+            existing_index = next(
+                (
+                    index for index, item in enumerate(guild_shop["items"])
+                    if str(item.get("key", "")).casefold() == key.casefold()
+                ),
+                None
+            )
+
+            if existing_index is None:
+                guild_shop["items"].append(item_data)
+                flash("DayZ shop item added.", "success")
+            else:
+                guild_shop["items"][existing_index].update(item_data)
+                flash("DayZ shop item updated.", "success")
+
+        elif action == "delete_item":
+            key = request.form.get("key", "")
+            guild_shop["items"] = [
+                item for item in guild_shop["items"]
+                if str(item.get("key", "")) != str(key)
+            ]
+            flash("DayZ shop item deleted.", "success")
+
+        elif action == "add_vehicle":
+            try:
+                vx = float(request.form.get("vehicle_x", 0) or 0)
+                vz = float(request.form.get("vehicle_z", 0) or 0)
+                vy = float(request.form.get("vehicle_y", 0) or 0)
+                lifetime = max(1, int(request.form.get("restart_lifetime", 1) or 1))
+            except ValueError:
+                flash("Vehicle coordinates and restart lifetime must be valid.", "warning")
+                return redirect(url_for("dayz_shop"))
+
+            guild_shop["vehicles"].append({
+                "id": secrets.token_urlsafe(8),
+                "display_name": request.form.get("vehicle_name", "").strip(),
+                "class_name": request.form.get("vehicle_class", "").strip(),
+                "location_name": request.form.get("vehicle_location_name", "").strip()[:100],
+                "x": vx,
+                "z": vz,
+                "y": vy,
+                "restart_lifetime": lifetime,
+                "spawned_restart": 0,
+                "enabled": True,
+            })
+            flash("Persistent DayZ vehicle added.", "success")
+
+        elif action == "delete_vehicle":
+            vehicle_id = request.form.get("vehicle_id", "")
+            guild_shop["vehicles"] = [
+                vehicle for vehicle in guild_shop["vehicles"]
+                if vehicle.get("id") != vehicle_id
+            ]
+            flash("DayZ vehicle deleted.", "success")
+
+        with open(shop_path, "w", encoding="utf-8") as file:
+            json.dump(root, file, indent=4, ensure_ascii=False)
+
         return redirect(url_for("dayz_shop"))
-    return render_template("dayz/shop.html",dayz=s,shop=shop,dayz_tab="shop")
+
+    return render_template(
+        "dayz/shop.html",
+        dayz=settings,
+        shop=guild_shop,
+        dayz_tab="shop"
+    )
+
 
 @app.route("/integrations/dayz/factions",methods=["GET","POST"])
 def dayz_factions():
