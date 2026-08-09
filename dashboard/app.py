@@ -3548,16 +3548,71 @@ def dayz_shop():
     root = load_or_create_json(shop_path, {"guilds": {}})
     guild_shop = root.setdefault("guilds", {}).setdefault(
         str(guild_id),
-        {"items": [], "vehicles": []}
+        {
+            "settings": {},
+            "items": [],
+            "vehicles": []
+        }
     )
+
+    shop_settings = guild_shop.setdefault("settings", {})
     guild_shop.setdefault("items", [])
     guild_shop.setdefault("vehicles", [])
+
+    shop_settings.setdefault("enabled", True)
+    shop_settings.setdefault("title", "DayZ Online Shop")
+    shop_settings.setdefault(
+        "description",
+        "Buy DayZ items using your shared bot economy."
+    )
+    shop_settings.setdefault("purchase_title", "🛒 DayZ Purchase Queued")
+    shop_settings.setdefault("default_location_name", "Main Trader")
+    shop_settings.setdefault("default_x", 0)
+    shop_settings.setdefault("default_z", 0)
+    shop_settings.setdefault("default_y", 0)
 
     if request.method == "POST":
         action = request.form.get("action", "").strip()
 
-        if action in {"add_item", "update_item"}:
+        if action == "save_shop_settings":
+            shop_settings["enabled"] = "shop_enabled" in request.form
+            shop_settings["title"] = request.form.get(
+                "shop_title",
+                "DayZ Online Shop"
+            ).strip()[:100]
+            shop_settings["description"] = request.form.get(
+                "shop_description",
+                ""
+            ).strip()[:500]
+            shop_settings["purchase_title"] = request.form.get(
+                "purchase_title",
+                "🛒 DayZ Purchase Queued"
+            ).strip()[:100]
+            shop_settings["default_location_name"] = request.form.get(
+                "default_location_name",
+                "Main Trader"
+            ).strip()[:100]
+
+            try:
+                shop_settings["default_x"] = float(
+                    request.form.get("default_x", 0) or 0
+                )
+                shop_settings["default_z"] = float(
+                    request.form.get("default_z", 0) or 0
+                )
+                shop_settings["default_y"] = float(
+                    request.form.get("default_y", 0) or 0
+                )
+            except ValueError:
+                flash("Default shop coordinates must be valid numbers.", "warning")
+                return redirect(url_for("dayz_shop"))
+
+            flash("DayZ shop settings saved.", "success")
+
+        elif action in {"add_item", "update_item"}:
             key = request.form.get("key", "").strip()
+            original_key = request.form.get("original_key", "").strip()
+
             if not key:
                 flash("Shop item key is required.", "warning")
                 return redirect(url_for("dayz_shop"))
@@ -3565,48 +3620,136 @@ def dayz_shop():
             try:
                 price = max(0, int(request.form.get("price", 0) or 0))
                 quantity = max(1, int(request.form.get("quantity", 1) or 1))
-                x = float(request.form.get("x", 0) or 0)
-                z = float(request.form.get("z", 0) or 0)
-                y = float(request.form.get("y", 0) or 0)
+                max_per_purchase = max(
+                    1,
+                    min(int(request.form.get("max_per_purchase", 10) or 10), 100)
+                )
+                raw_stock = request.form.get("stock", "-1").strip()
+                stock = -1 if raw_stock == "" else int(raw_stock)
+                if stock < -1:
+                    stock = -1
+
+                x = float(
+                    request.form.get(
+                        "x",
+                        shop_settings.get("default_x", 0)
+                    ) or 0
+                )
+                z = float(
+                    request.form.get(
+                        "z",
+                        shop_settings.get("default_z", 0)
+                    ) or 0
+                )
+                y = float(
+                    request.form.get(
+                        "y",
+                        shop_settings.get("default_y", 0)
+                    ) or 0
+                )
             except ValueError:
-                flash("Price, quantity and coordinates must be valid numbers.", "warning")
+                flash(
+                    "Price, quantity, stock and coordinates must be valid numbers.",
+                    "warning"
+                )
                 return redirect(url_for("dayz_shop"))
 
             item_data = {
                 "key": key,
-                "display_name": request.form.get("display_name", "").strip(),
-                "class_name": request.form.get("class_name", "").strip(),
-                "category": request.form.get("category", "General").strip() or "General",
-                "description": request.form.get("description", "").strip()[:500],
+                "display_name": request.form.get("display_name", "").strip()[:100],
+                "class_name": request.form.get("class_name", "").strip()[:120],
+                "category": request.form.get(
+                    "category",
+                    "General"
+                ).strip()[:80] or "General",
+                "description": request.form.get(
+                    "description",
+                    ""
+                ).strip()[:500],
+                "image_url": request.form.get(
+                    "image_url",
+                    ""
+                ).strip()[:500],
                 "price": price,
                 "quantity": quantity,
-                "location_name": request.form.get("location_name", "").strip()[:100],
+                "max_per_purchase": max_per_purchase,
+                "stock": stock,
+                "location_name": request.form.get(
+                    "location_name",
+                    shop_settings.get("default_location_name", "")
+                ).strip()[:100],
                 "x": x,
                 "z": z,
                 "y": y,
-                "allow_custom_location": "allow_custom_location" in request.form,
+                "allow_custom_location": (
+                    "allow_custom_location" in request.form
+                ),
                 "enabled": "enabled" in request.form,
             }
 
+            lookup_key = original_key or key
             existing_index = next(
                 (
-                    index for index, item in enumerate(guild_shop["items"])
-                    if str(item.get("key", "")).casefold() == key.casefold()
+                    index
+                    for index, item in enumerate(guild_shop["items"])
+                    if str(item.get("key", "")).casefold()
+                    == lookup_key.casefold()
                 ),
                 None
             )
+
+            # Prevent duplicate item keys.
+            duplicate = next(
+                (
+                    item
+                    for index, item in enumerate(guild_shop["items"])
+                    if str(item.get("key", "")).casefold() == key.casefold()
+                    and index != existing_index
+                ),
+                None
+            )
+            if duplicate:
+                flash("Another shop item already uses that key.", "warning")
+                return redirect(url_for("dayz_shop"))
 
             if existing_index is None:
                 guild_shop["items"].append(item_data)
                 flash("DayZ shop item added.", "success")
             else:
-                guild_shop["items"][existing_index].update(item_data)
+                guild_shop["items"][existing_index] = item_data
                 flash("DayZ shop item updated.", "success")
+
+        elif action == "toggle_item":
+            key = request.form.get("key", "")
+            for item in guild_shop["items"]:
+                if str(item.get("key", "")) == key:
+                    item["enabled"] = not bool(item.get("enabled", True))
+                    break
+            flash("Shop item availability updated.", "success")
+
+        elif action == "duplicate_item":
+            key = request.form.get("key", "")
+            source = next(
+                (
+                    item for item in guild_shop["items"]
+                    if str(item.get("key", "")) == key
+                ),
+                None
+            )
+            if source:
+                copied = dict(source)
+                copied["key"] = f"{source.get('key', 'item')}_copy"
+                copied["display_name"] = (
+                    f"{source.get('display_name', 'Item')} Copy"
+                )[:100]
+                guild_shop["items"].append(copied)
+                flash("Shop item duplicated.", "success")
 
         elif action == "delete_item":
             key = request.form.get("key", "")
             guild_shop["items"] = [
-                item for item in guild_shop["items"]
+                item
+                for item in guild_shop["items"]
                 if str(item.get("key", "")) != str(key)
             ]
             flash("DayZ shop item deleted.", "success")
@@ -3616,16 +3759,35 @@ def dayz_shop():
                 vx = float(request.form.get("vehicle_x", 0) or 0)
                 vz = float(request.form.get("vehicle_z", 0) or 0)
                 vy = float(request.form.get("vehicle_y", 0) or 0)
-                lifetime = max(1, int(request.form.get("restart_lifetime", 1) or 1))
+                lifetime = max(
+                    1,
+                    int(request.form.get("restart_lifetime", 1) or 1)
+                )
             except ValueError:
-                flash("Vehicle coordinates and restart lifetime must be valid.", "warning")
+                flash(
+                    "Vehicle coordinates and restart lifetime must be valid.",
+                    "warning"
+                )
                 return redirect(url_for("dayz_shop"))
 
             guild_shop["vehicles"].append({
                 "id": secrets.token_urlsafe(8),
-                "display_name": request.form.get("vehicle_name", "").strip(),
-                "class_name": request.form.get("vehicle_class", "").strip(),
-                "location_name": request.form.get("vehicle_location_name", "").strip()[:100],
+                "display_name": request.form.get(
+                    "vehicle_name",
+                    ""
+                ).strip()[:100],
+                "class_name": request.form.get(
+                    "vehicle_class",
+                    ""
+                ).strip()[:120],
+                "image_url": request.form.get(
+                    "vehicle_image_url",
+                    ""
+                ).strip()[:500],
+                "location_name": request.form.get(
+                    "vehicle_location_name",
+                    ""
+                ).strip()[:100],
                 "x": vx,
                 "z": vz,
                 "y": vy,
@@ -3638,7 +3800,8 @@ def dayz_shop():
         elif action == "delete_vehicle":
             vehicle_id = request.form.get("vehicle_id", "")
             guild_shop["vehicles"] = [
-                vehicle for vehicle in guild_shop["vehicles"]
+                vehicle
+                for vehicle in guild_shop["vehicles"]
                 if vehicle.get("id") != vehicle_id
             ]
             flash("DayZ vehicle deleted.", "success")
@@ -3648,10 +3811,17 @@ def dayz_shop():
 
         return redirect(url_for("dayz_shop"))
 
+    categories = sorted({
+        str(item.get("category", "General"))
+        for item in guild_shop["items"]
+    })
+
     return render_template(
         "dayz/shop.html",
         dayz=settings,
         shop=guild_shop,
+        shop_settings=shop_settings,
+        categories=categories,
         dayz_tab="shop"
     )
 
