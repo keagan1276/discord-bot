@@ -2324,7 +2324,7 @@ bot.tree.interaction_check = (
 # ------------------- PIRATE GEMINI AI HELPER -------------------
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 PIRATE_AI_MODEL = (
-    os.getenv("PIRATE_AI_MODEL", "gemini-2.5-flash-lite").strip()
+    os.getenv("PIRATE_AI_MODEL", "gemini-3.5-flash-lite").strip()
     or "gemini-2.5-flash-lite"
 )
 PIRATE_AI_COOLDOWN = max(
@@ -2560,7 +2560,6 @@ def _pirate_gemini_request(question, command_list, history):
         "contents": contents,
         "generationConfig": {
             "maxOutputTokens": 500,
-            "temperature": 0.7,
         },
     }).encode("utf-8")
 
