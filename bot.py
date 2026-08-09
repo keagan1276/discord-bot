@@ -2320,6 +2320,307 @@ bot.tree.interaction_check = (
     check_slash_command_permissions
 )
     
+
+# ------------------- PIRATE AI HELPER -------------------
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+PIRATE_AI_MODEL = os.getenv("PIRATE_AI_MODEL", "gpt-5-mini").strip() or "gpt-5-mini"
+PIRATE_AI_COOLDOWN = max(3, int(os.getenv("PIRATE_AI_COOLDOWN", "8") or 8))
+PIRATE_AI_MAX_QUESTION = max(
+    100,
+    min(int(os.getenv("PIRATE_AI_MAX_QUESTION", "1200") or 1200), 4000)
+)
+
+# Optional comma-separated channel IDs. Leave blank to allow the helper anywhere.
+PIRATE_AI_CHANNEL_IDS = {
+    value.strip()
+    for value in os.getenv("PIRATE_AI_CHANNEL_IDS", "").split(",")
+    if value.strip().isdigit()
+}
+
+_pirate_ai_last_used = {}
+
+PIRATE_BOT_KNOWLEDGE = r"""
+You are the Pirates Bot AI Helper inside Discord.
+
+ONLY help with Pirates Bot, the Pirates Bot dashboard, Discord features,
+Deadside integration, and DayZ integration.
+
+RULES:
+- Keep answers short, practical, and Discord-friendly.
+- Use a light pirate style without making the answer hard to read.
+- Prefer exact slash-command examples in backticks.
+- Never invent a command.
+- Never invent balances, stats, coordinates, server state, or configuration.
+- Never reveal API keys, tokens, FTP credentials, passwords, or private config.
+- If unsure, say you cannot find a matching Pirates Bot command and suggest
+  checking the help guide or asking an administrator.
+- For dashboard questions, use:
+  https://amusing-inspiration-production-eab1.up.railway.app/
+- If the user asks something unrelated to Pirates Bot, politely redirect them.
+
+ECONOMY:
+- `/balance` shows wallet and bank.
+- `/work` earns money.
+- `/daily` claims the daily reward.
+- `/deposit amount:<amount>` moves wallet money into bank.
+- `/withdraw amount:<amount>` moves bank money into wallet.
+- `/pay member:@User amount:<amount>` pays another member.
+- `/rob member:@User` attempts to rob another member.
+- `/leaderboard` shows the richest users.
+- `/slots bet:<amount>` plays slots.
+- `/blackjack bet:<amount>` plays blackjack.
+- `/roulette amount:<amount> choice:<red|black|green|0-36>` plays roulette.
+
+PIRATE JOBS:
+- `/jobs` lists jobs.
+- `/choosejob job:<job id>` selects a job.
+- `/jobwork` works the selected job.
+- `/jobinfo` shows job progress.
+- `/jobleaderboard` shows top workers.
+
+COMMUNITY:
+- `/poll question:<question>` creates a yes/no poll.
+- `/8ball question:<question>` asks the 8-ball.
+- `/giveaway duration:<seconds> prize:<prize>` starts a giveaway.
+- `/embed` creates a custom embed if the user has permission.
+- `/remindme minutes:<minutes> message:<message>` creates a reminder.
+- `/pirate` posts the pirate picture.
+
+DEADSIDE:
+- `/ds link gamertag:<name>` links a Deadside gamertag.
+- `/ds unlink` unlinks it.
+- `/ds stats` shows tracked Deadside stats.
+- `/ds session` shows the current earning session.
+- `/ds leaderboard` shows the Deadside kill leaderboard.
+- `/ds bounty_create gamertag:<name> amount:<amount>` places a bounty.
+- `/ds bounties` lists active Deadside bounties.
+- `/dsstats` is a quick stats alias.
+- `/session` is a quick session alias.
+
+DAYZ:
+- `/dz link gamertag:<name> guid:<optional guid>` links a DayZ player.
+- `/dz whereami` shows the latest logged DayZ position.
+- `/dz stats` shows DayZ stats.
+- `/dz leaderboard` shows the DayZ kill leaderboard.
+- `/dz playerlocations` is administrator-only.
+- `/dz bounty gamertag:<name> amount:<amount>` places a DayZ bounty.
+- `/dz bounties` lists DayZ bounties.
+- `/dz buy item_key:<key> quantity:<number>` buys a DayZ shop item.
+- `/buy item:<key> quantity:<number>` is the shorter DayZ shop command.
+- Custom-location items can also use x, z and y coordinates.
+
+ADMIN:
+- `/help setup` posts the help guide and is administrator-only.
+- `/roleadd` and `/roleremove` manage roles.
+- `/setreactionrole` sets a reaction role.
+- `/setwelcome` and `/removewelcome` manage welcome setup where available.
+- `/setautorole` and `/removeautorole` manage auto roles.
+- `/removeallmsgs` clears messages and is administrator-only.
+- Economy admin commands may include `/addmoney`, `/removemoney`,
+  `/economywipe`, and `/money` when present in the live command list.
+
+DASHBOARD:
+- Sign in with Discord.
+- Select a server the user can manage.
+- Pirates Bot must be installed in that server.
+- The dashboard controls Welcome, Tickets, Rules, Reaction Roles, Moderation,
+  Embeds, Polls, Giveaways, Economy, Jobs, Command Permissions, Deadside,
+  DayZ, and other enabled modules.
+- Deadside and DayZ use the same Pirates Bot economy.
+"""
+
+
+def _pirate_live_commands():
+    """Return the commands actually registered in the running bot."""
+    lines = []
+
+    def walk(command, prefix=""):
+        name = f"{prefix} {command.name}".strip()
+        description = getattr(command, "description", "") or "No description"
+        lines.append(f"/{name} — {description}")
+
+        for child in getattr(command, "commands", []) or []:
+            walk(child, name)
+
+    try:
+        for command in bot.tree.get_commands():
+            walk(command)
+    except Exception:
+        pass
+
+    return "\n".join(lines[:180])
+
+
+def _pirate_ai_extract_text(payload):
+    if not isinstance(payload, dict):
+        return ""
+
+    output_text = payload.get("output_text")
+    if isinstance(output_text, str) and output_text.strip():
+        return output_text.strip()
+
+    chunks = []
+    for item in payload.get("output", []) or []:
+        if not isinstance(item, dict):
+            continue
+
+        for content in item.get("content", []) or []:
+            if not isinstance(content, dict):
+                continue
+
+            text = content.get("text")
+            if isinstance(text, str) and text.strip():
+                chunks.append(text.strip())
+
+    return "\n".join(chunks).strip()
+
+
+def _pirate_ai_request(question, command_list):
+    if not OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY is not configured")
+
+    request_body = json.dumps({
+        "model": PIRATE_AI_MODEL,
+        "store": False,
+        "instructions": (
+            PIRATE_BOT_KNOWLEDGE
+            + "\n\nLIVE SLASH COMMANDS CURRENTLY REGISTERED:\n"
+            + (command_list or "No live command list available.")
+        ),
+        "input": question,
+        "max_output_tokens": 350,
+    }).encode("utf-8")
+
+    api_request = urllib.request.Request(
+        "https://api.openai.com/v1/responses",
+        data=request_body,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Content-Type": "application/json",
+            "User-Agent": "PiratesBot-AI-Helper/1.0",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(api_request, timeout=25) as response:
+            payload = json.loads(
+                response.read().decode("utf-8", errors="replace")
+            )
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8", errors="replace")[:700]
+        raise RuntimeError(
+            f"OpenAI API HTTP {error.code}: {detail}"
+        ) from error
+
+    answer = _pirate_ai_extract_text(payload)
+    if not answer:
+        raise RuntimeError("OpenAI returned an empty response")
+
+    return answer[:1900]
+
+
+def _pirate_helper_fallback(question):
+    """Basic help continues to work even if the AI API is unavailable."""
+    q = question.casefold()
+
+    matches = [
+        (("balance", "wallet", "how much money"), "`/balance` shows your wallet and bank."),
+        (("send money", "pay someone", "give money"), "Use `/pay member:@User amount:500`."),
+        (("blackjack",), "Use `/blackjack bet:500`."),
+        (("roulette",), "Use `/roulette amount:500 choice:red`."),
+        (("slots", "slot machine"), "Use `/slots bet:500`."),
+        (("daily",), "Use `/daily`."),
+        (("earn money", "work"), "Use `/work`."),
+        (("jobs", "job list", "career"), "Use `/jobs`, then `/choosejob job:<job id>`."),
+        (("jobwork", "work my job", "job work"), "Use `/jobwork`."),
+        (("job info", "job progress"), "Use `/jobinfo`."),
+        (("deadside link", "link deadside"), "Use `/ds link gamertag:YourGamertag`."),
+        (("deadside stats", "ds stats"), "Use `/ds stats` or `/dsstats`."),
+        (("deadside session",), "Use `/ds session` or `/session`."),
+        (("deadside bounty",), "Use `/ds bounty_create gamertag:Player amount:500`."),
+        (("dayz link", "link dayz"), "Use `/dz link gamertag:YourGamertag`."),
+        (("whereami", "where am i", "coordinates"), "For DayZ use `/dz whereami`."),
+        (("dayz stats",), "Use `/dz stats`."),
+        (("dayz bounty",), "Use `/dz bounty gamertag:Player amount:500`."),
+        (("buy", "shop", "purchase"), "For the DayZ shop use `/buy item:<key> quantity:1`."),
+        (("dashboard", "website"), "Dashboard: https://amusing-inspiration-production-eab1.up.railway.app/"),
+    ]
+
+    for keywords, answer in matches:
+        if any(keyword in q for keyword in keywords):
+            return f"☠️ **Pirate Helper**\n{answer}"
+
+    return (
+        "☠️ **Pirate Helper**\n"
+        "I couldn't find a confident Pirates Bot command for that. "
+        "Check the help guide or ask an administrator."
+    )
+
+
+async def process_pirate_ai_helper(message):
+    content = str(message.content or "").strip()
+
+    # Only trigger when a message starts with the standalone word Pirate.
+    match = re.match(r"(?is)^pirate\b[\s,:-]*(.*)$", content)
+    if not match:
+        return False
+
+    if PIRATE_AI_CHANNEL_IDS and str(message.channel.id) not in PIRATE_AI_CHANNEL_IDS:
+        return False
+
+    question = match.group(1).strip()
+
+    if not question:
+        await message.reply(
+            "☠️ **Pirate Helper**\n"
+            "Ask me something like:\n"
+            "`Pirate what command do I use for blackjack?`",
+            mention_author=False,
+        )
+        return True
+
+    question = question[:PIRATE_AI_MAX_QUESTION]
+
+    user_key = (str(message.guild.id), str(message.author.id))
+    now = time.monotonic()
+    last_used = _pirate_ai_last_used.get(user_key, 0.0)
+    remaining = PIRATE_AI_COOLDOWN - (now - last_used)
+
+    if remaining > 0:
+        await message.reply(
+            f"☠️ Give me **{max(1, int(remaining))}s** before asking again.",
+            mention_author=False,
+            delete_after=6,
+        )
+        return True
+
+    _pirate_ai_last_used[user_key] = now
+
+    async with message.channel.typing():
+        try:
+            if OPENAI_API_KEY:
+                answer = await asyncio.to_thread(
+                    _pirate_ai_request,
+                    question,
+                    _pirate_live_commands(),
+                )
+            else:
+                answer = _pirate_helper_fallback(question)
+
+        except Exception as error:
+            print(f"Pirate AI Helper error: {error}")
+            answer = _pirate_helper_fallback(question)
+
+    await message.reply(
+        answer,
+        mention_author=False,
+        allowed_mentions=discord.AllowedMentions.none(),
+    )
+
+    return True
+
+
 # =========================================================
 # MESSAGE EVENT
 # =========================================================
@@ -2450,6 +2751,10 @@ async def on_message(message):
                 pass
 
             return
+
+    # Pirate AI Helper — only messages beginning with `Pirate`.
+    if await process_pirate_ai_helper(message):
+        return
 
     # Update activity tracking
     activity = load_activity()
