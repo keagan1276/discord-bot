@@ -3236,15 +3236,19 @@ async def create_dashboard_ticket(
         or f"user-{user.id}"
     )
 
-    channel_name = clean_ticket_channel_name(
-        f"{username}-ticket"
-    )
+    # Avoid names such as "ticket-ticket" when the member's
+    # display name already contains the word "ticket".
+    if "ticket" in username.split("-"):
+        channel_name = username
+    else:
+        channel_name = clean_ticket_channel_name(
+            f"{username}-ticket"
+        )
 
-    # If that channel name already exists for another ticket/type,
-    # add a short suffix so Discord channels remain easy to identify.
+    # If that channel name already exists, add a short unique suffix.
     if discord.utils.get(guild.text_channels, name=channel_name):
         channel_name = clean_ticket_channel_name(
-            f"{username}-ticket-{str(user.id)[-4:]}"
+            f"{channel_name}-{str(user.id)[-4:]}"
         )
 
     try:
