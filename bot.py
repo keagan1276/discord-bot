@@ -6270,6 +6270,116 @@ async def apply_dashboard_feature(feature):
     return {"message": "Settings applied"}
 
 
+
+
+# ------------------- PIRATES BOT HELP SETUP -------------------
+PIRATES_HELP_IMAGE = os.path.join(
+    BASE_DIR,
+    "assets",
+    "help",
+    "pirates_bot_help.png"
+)
+
+PIRATES_DASHBOARD_URL = (
+    "https://amusing-inspiration-production-eab1.up.railway.app/"
+)
+
+
+class PiratesHelpView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+        self.add_item(
+            discord.ui.Button(
+                label="Open Pirates Bot Dashboard",
+                emoji="🖥️",
+                style=discord.ButtonStyle.link,
+                url=PIRATES_DASHBOARD_URL,
+            )
+        )
+
+
+help_group = app_commands.Group(
+    name="help",
+    description="Pirates Bot help and setup tools"
+)
+
+
+@help_group.command(
+    name="setup",
+    description="Admin: Post the Pirates Bot help guide"
+)
+@app_commands.checks.has_permissions(administrator=True)
+@app_commands.describe(
+    channel="Channel to post the help guide in; leave blank for this channel"
+)
+async def help_setup(
+    interaction: discord.Interaction,
+    channel: discord.TextChannel | None = None
+):
+    if interaction.guild is None:
+        return await interaction.response.send_message(
+            "❌ Use this command inside a Discord server.",
+            ephemeral=True,
+        )
+
+    target = channel or interaction.channel
+
+    if not isinstance(target, discord.TextChannel):
+        return await interaction.response.send_message(
+            "❌ Choose a normal Discord text channel.",
+            ephemeral=True,
+        )
+
+    permissions = target.permissions_for(interaction.guild.me)
+    if not permissions.view_channel or not permissions.send_messages:
+        return await interaction.response.send_message(
+            f"❌ I cannot send messages in {target.mention}.",
+            ephemeral=True,
+        )
+
+    if not os.path.isfile(PIRATES_HELP_IMAGE):
+        return await interaction.response.send_message(
+            "❌ The Pirates Bot help image is missing from "
+            "`assets/help/pirates_bot_help.png`.",
+            ephemeral=True,
+        )
+
+    await interaction.response.defer(ephemeral=True)
+
+    image_file = discord.File(
+        PIRATES_HELP_IMAGE,
+        filename="pirates_bot_help.png"
+    )
+
+    embed = discord.Embed(
+        title="☠️ Pirates Bot Help Centre",
+        description=(
+            "Everything you need to get started with Pirates Bot.\n\n"
+            "Use the guide below for commands, game integrations and "
+            "dashboard setup."
+        ),
+        colour=0xB8860B,
+    )
+    embed.set_image(url="attachment://pirates_bot_help.png")
+    embed.set_footer(text="Pirates Bot • Rule the server. Command the seas.")
+
+    message = await target.send(
+        embed=embed,
+        file=image_file,
+        view=PiratesHelpView(),
+    )
+
+    await interaction.followup.send(
+        f"✅ Help guide posted in {target.mention}.\n"
+        f"[Jump to message]({message.jump_url})",
+        ephemeral=True,
+    )
+
+
+tree.add_command(help_group)
+
+
     # ------------------- READY -------------------
 @bot.event
 async def on_ready():
