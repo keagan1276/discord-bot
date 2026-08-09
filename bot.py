@@ -591,6 +591,7 @@ ANNOUNCEMENTS_FILE = os.path.join(BASE_DIR, "auto_announcements.json")
 REMINDERS_FILE = os.path.join(BASE_DIR, "reminders.json")
 ROLE_MANAGER_FILE = os.path.join(BASE_DIR, "role_manager.json")
 LOGS_FILE = os.path.join(BASE_DIR, "logs.json")
+ACTIVITY_FILE = os.path.join(BASE_DIR, "activity.json")
 PERMISSIONS_FILE = os.path.join(BASE_DIR, "permission_manager.json")
 DEADSIDE_FILE = os.path.join(BASE_DIR, "deadside.json")
 DEADSIDE_STATE_FILE = os.path.join(BASE_DIR, "deadside_state.json")
@@ -2225,16 +2226,26 @@ def save_jobs(data):
         json.dump(data, f, indent=4)
 
 def load_activity():
+    """Load message activity without ever crashing on a missing/bad JSON file."""
     try:
-        with open(ACTIVITY_FILE, "r") as f:
-            return json.load(f)
-    except FileNotFoundError:
+        with open(ACTIVITY_FILE, "r", encoding="utf-8") as file:
+            data = json.load(file)
+            return data if isinstance(data, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
         return {}
 
+
 def save_activity(data):
-    with open(ACTIVITY_FILE, "w") as f:
-        json.dump(data, f, indent=4)
-        
+    """Write activity atomically so message handling cannot corrupt the file."""
+    try:
+        temporary_file = f"{ACTIVITY_FILE}.tmp"
+        with open(temporary_file, "w", encoding="utf-8") as file:
+            json.dump(data, file, indent=4, ensure_ascii=False)
+        os.replace(temporary_file, ACTIVITY_FILE)
+    except OSError as error:
+        print(f"Activity save error: {error}")
+
+
 @bot.check
 async def check_prefix_command_permissions(
     ctx
@@ -2337,26 +2348,65 @@ PIRATE_AI_CHANNEL_IDS = {
     if value.strip().isdigit()
 }
 
+print(
+    "Pirate AI Helper configured:",
+    "OpenAI key present" if OPENAI_API_KEY else "NO OpenAI key - fallback mode",
+    f"| model={PIRATE_AI_MODEL}",
+    f"| restricted_channels={len(PIRATE_AI_CHANNEL_IDS)}"
+)
+
 _pirate_ai_last_used = {}
+_pirate_ai_history = {}
 
 PIRATE_BOT_KNOWLEDGE = r"""
-You are the Pirates Bot AI Helper inside Discord.
+You are Pirate, the friendly AI helper inside Pirates Bot on Discord.
 
-ONLY help with Pirates Bot, the Pirates Bot dashboard, Discord features,
-Deadside integration, and DayZ integration.
+PERSONALITY:
+- Feel human, warm, relaxed and conversational.
+- You are a pirate-themed assistant, but do not make every sentence difficult to read.
+- Use occasional pirate words naturally: matey, captain, crew, ahoy, treasure, seas.
+- If someone says hello, greet them back naturally.
+- If someone jokes with you, joke back.
+- If someone asks for a joke, tell a PIRATE-themed joke only.
+- You may use emojis such as ☠️ 🏴‍☠️ ⚓ occasionally, but do not spam them.
+- Do not repeat the same greeting or catchphrase every time.
 
-RULES:
-- Keep answers short, practical, and Discord-friendly.
-- Use a light pirate style without making the answer hard to read.
-- Prefer exact slash-command examples in backticks.
-- Never invent a command.
-- Never invent balances, stats, coordinates, server state, or configuration.
-- Never reveal API keys, tokens, FTP credentials, passwords, or private config.
-- If unsure, say you cannot find a matching Pirates Bot command and suggest
-  checking the help guide or asking an administrator.
-- For dashboard questions, use:
-  https://amusing-inspiration-production-eab1.up.railway.app/
-- If the user asks something unrelated to Pirates Bot, politely redirect them.
+WHAT YOU CAN ANSWER:
+- You can answer GENERAL QUESTIONS, not just questions about Pirates Bot.
+- You can help with everyday knowledge, explanations, writing, ideas, gaming,
+  technology, Discord, coding, maths, science, history, general advice and
+  normal conversation.
+- If the user asks about Pirates Bot, Deadside, DayZ, the dashboard, commands,
+  Railway setup or bot configuration, prioritize the Pirates Bot information
+  supplied below and the LIVE COMMAND LIST.
+- Never invent a Pirates Bot command. If unsure whether a command exists, say so.
+- Never invent current player stats, balances, server state, coordinates,
+  configuration values or secret information.
+- Never reveal API keys, tokens, passwords, FTP credentials or environment secrets.
+- Never claim you changed a server/dashboard setting unless an actual bot feature did so.
+- For questions that need very current information and you do not have a live
+  data source for it, say that the information may have changed rather than pretending.
+
+CONVERSATION:
+- Respond naturally to casual messages such as:
+  "Pirate hello"
+  "Pirate how are you?"
+  "Pirate tell me a joke"
+  "Pirate what do you think of my server?"
+  "Pirate explain black holes"
+- You may remember a small amount of recent conversation supplied to you in the
+  request so follow-up questions make sense.
+- Keep normal Discord answers concise unless the user asks for detail.
+- Do not prepend every answer with the exact same title. Use "☠️ Pirate" only
+  when it helps the response feel branded.
+
+PIRATE JOKES:
+- If asked for a joke, pun or funny line, keep it pirate-themed.
+- Do not switch to unrelated joke themes unless the user explicitly asks for
+  factual humor explanation rather than a joke.
+
+PIRATES BOT DASHBOARD:
+https://amusing-inspiration-production-eab1.up.railway.app/
 
 ECONOMY:
 - `/balance` shows wallet and bank.
@@ -2366,21 +2416,21 @@ ECONOMY:
 - `/withdraw amount:<amount>` moves bank money into wallet.
 - `/pay member:@User amount:<amount>` pays another member.
 - `/rob member:@User` attempts to rob another member.
-- `/leaderboard` shows the richest users.
+- `/leaderboard` shows richest users.
 - `/slots bet:<amount>` plays slots.
 - `/blackjack bet:<amount>` plays blackjack.
 - `/roulette amount:<amount> choice:<red|black|green|0-36>` plays roulette.
 
 PIRATE JOBS:
 - `/jobs` lists jobs.
-- `/choosejob job:<job id>` selects a job.
+- `/choosejob job:<job id>` chooses a pirate career.
 - `/jobwork` works the selected job.
 - `/jobinfo` shows job progress.
 - `/jobleaderboard` shows top workers.
 
 COMMUNITY:
 - `/poll question:<question>` creates a yes/no poll.
-- `/8ball question:<question>` asks the 8-ball.
+- `/8ball question:<question>` asks the magic 8-ball.
 - `/giveaway duration:<seconds> prize:<prize>` starts a giveaway.
 - `/embed` creates a custom embed if the user has permission.
 - `/remindme minutes:<minutes> message:<message>` creates a reminder.
@@ -2388,102 +2438,75 @@ COMMUNITY:
 
 DEADSIDE:
 - `/ds link gamertag:<name>` links a Deadside gamertag.
-- `/ds unlink` unlinks it.
+- `/ds unlink` removes the link.
 - `/ds stats` shows tracked Deadside stats.
-- `/ds session` shows the current earning session.
-- `/ds leaderboard` shows the Deadside kill leaderboard.
+- `/ds session` shows the current Deadside earning session.
+- `/ds leaderboard` shows the Deadside leaderboard.
 - `/ds bounty_create gamertag:<name> amount:<amount>` places a bounty.
 - `/ds bounties` lists active Deadside bounties.
 - `/dsstats` is a quick stats alias.
 - `/session` is a quick session alias.
+- Administrators can use `/force link game:Deadside member:@User gamertag:<name>`.
 
 DAYZ:
 - `/dz link gamertag:<name> guid:<optional guid>` links a DayZ player.
-- `/dz whereami` shows the latest logged DayZ position.
+- `/dz whereami` shows the latest logged DayZ coordinates.
 - `/dz stats` shows DayZ stats.
 - `/dz leaderboard` shows the DayZ kill leaderboard.
 - `/dz playerlocations` is administrator-only.
 - `/dz bounty gamertag:<name> amount:<amount>` places a DayZ bounty.
-- `/dz bounties` lists DayZ bounties.
-- `/dz buy item_key:<key> quantity:<number>` buys a DayZ shop item.
+- `/dz bounties` lists active DayZ bounties.
+- `/dz buy item_key:<key> quantity:<number>` buys a configured shop item.
 - `/buy item:<key> quantity:<number>` is the shorter DayZ shop command.
-- Custom-location items can also use x, z and y coordinates.
+- Custom-location items may also use x, z and y.
+- Administrators can use `/force link game:DayZ member:@User gamertag:<name> guid:<optional>`.
 
-ADMIN:
-- `/help setup` posts the help guide and is administrator-only.
-- `/force link game:<Deadside|DayZ> member:@User gamertag:<name> guid:<optional>` lets an administrator override/link a player's game account.
-- `/roleadd` and `/roleremove` manage roles.
-- `/setreactionrole` sets a reaction role.
-- `/setwelcome` and `/removewelcome` manage welcome setup where available.
+ADMIN / SETUP:
+- `/help setup` posts the Pirates Bot help guide and is administrator-only.
+- `/force link` is administrator-only and can link Deadside or DayZ players.
+- `/roleadd` and `/roleremove` manage roles when available.
+- `/setreactionrole` manages reaction roles where available.
+- `/setwelcome` and `/removewelcome` manage legacy welcome setup where available.
 - `/setautorole` and `/removeautorole` manage auto roles.
 - `/removeallmsgs` clears messages and is administrator-only.
-- Economy admin commands may include `/addmoney`, `/removemoney`,
-  `/economywipe`, and `/money` when present in the live command list.
-
-
 
 BOT SETUP / TROUBLESHOOTING:
-- Pirates Bot dashboard: https://amusing-inspiration-production-eab1.up.railway.app/
-- Administrators should sign in with Discord, open Manage Servers, invite Pirates
-  Bot if needed, then select the server they want to manage.
-- A user must own the server or have Manage Server / Administrator permission
-  for Discord to report it as manageable.
-- After inviting Pirates Bot, return to Manage Servers and refresh/re-login if
-  the server still shows the bot as not installed.
-- The bot invite must include both the `bot` and `applications.commands` scopes.
-- The bot should have the Discord permissions required by the features being
-  used. If channels or roles are missing in selectors, first check that the bot
-  can view those channels/roles and that the correct server is selected.
-- Dashboard settings are server-specific. Always make sure the correct Discord
-  server is selected before changing settings.
-- Important Railway environment variable names can include:
-  `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`,
-  `DISCORD_REDIRECT_URI`, `DASHBOARD_API_KEY`, `BOT_API_URL`,
-  `FLASK_SECRET_KEY`, `BOT_OWNER_ID`, and `OPENAI_API_KEY`.
-- Never ask the user to paste secret values into Discord. Explain where the
-  variable belongs, but never reveal or request the actual secret.
-- `DASHBOARD_API_KEY` must match between the bot service and dashboard service.
-- `BOT_API_URL` on the dashboard service must point at the running bot API
-  service address.
-- If Railway says a Python file has an error, suggest checking the deployment
-  traceback and running `python -m py_compile bot.py` or
-  `python -m py_compile dashboard/app.py` locally.
-- If a dashboard page returns Internal Server Error, ask for the Railway
-  traceback and identify the exact template/route error instead of guessing.
-- If slash commands do not appear after a deployment, first confirm the bot
-  started successfully and command sync completed.
+- Administrators sign in to the dashboard with Discord.
+- Use Manage Servers to select a Discord server.
+- Pirates Bot must be installed in that server before it can be managed.
+- The user generally needs Manage Server or Administrator permission.
+- If a newly invited server does not appear, refresh/re-login so Discord guild
+  permissions are fetched again.
+- The bot invite should include `bot` and `applications.commands`.
+- If Discord channel selectors are empty, confirm the correct server is selected
+  and that Pirates Bot can view those channels.
+- `DASHBOARD_API_KEY` must match between the dashboard and bot services.
+- `BOT_API_URL` must point the dashboard at the running bot API.
+- Common Railway variables may include `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`,
+  `DISCORD_CLIENT_SECRET`, `DISCORD_REDIRECT_URI`, `DASHBOARD_API_KEY`,
+  `BOT_API_URL`, `FLASK_SECRET_KEY`, `BOT_OWNER_ID`, and `OPENAI_API_KEY`.
+- Never ask users to paste secret values into Discord.
+- For Python deployment errors, checking the Railway traceback and running
+  `python -m py_compile bot.py` or `python -m py_compile dashboard/app.py`
+  locally can help identify syntax problems.
+- For a dashboard Internal Server Error, use the Railway traceback to identify
+  the exact route/template error.
 
 DEADSIDE SETUP:
-- Open the Deadside integration in the dashboard after selecting the correct
-  Discord server.
-- Configure the server connection values required by that integration.
-- Configure Discord destination channels for feeds, logs, radar, factions and
-  other enabled systems.
-- Deadside gamertags can normally be linked by the user with `/ds link`.
-- Administrators can force a link with `/force link game:deadside`.
-- Deadside shares the same Pirates Bot economy rather than creating a separate
-  wallet.
+- Select the correct Discord server in the dashboard.
+- Open Deadside under Integrations.
+- Configure the server connection and Discord destination channels.
+- Configure killfeeds, deathfeeds, stats, factions, bounties, radar, admin logs,
+  economy rewards and other supported options.
+- Deadside uses the shared Pirates Bot economy.
 
 DAYZ SETUP:
-- Open the DayZ integration in the dashboard after selecting the correct server.
-- Configure the Nitrado service information and FTPS/admin-log access required
-  by the DayZ integration.
-- DayZ player-location features depend on position information being available
-  in the DayZ admin logs.
-- Configure killfeed, deathfeed, radar, economy, shop, factions and other
-  features from the DayZ dashboard tabs.
-- DayZ gamertags can normally be linked by the user with `/dz link`.
-- Administrators can force a link with `/force link game:dayz`.
+- Select the correct Discord server in the dashboard.
+- Open DayZ under Integrations.
+- Configure Nitrado and FTPS/admin-log information required by the integration.
+- Configure killfeed, deathfeed, radar, economy, shop, factions and stats.
+- Location features depend on suitable DayZ admin-log position data.
 - DayZ uses the shared Pirates Bot economy.
-
-DASHBOARD:
-- Sign in with Discord.
-- Select a server the user can manage.
-- Pirates Bot must be installed in that server.
-- The dashboard controls Welcome, Tickets, Rules, Reaction Roles, Moderation,
-  Embeds, Polls, Giveaways, Economy, Jobs, Command Permissions, Deadside,
-  DayZ, and other enabled modules.
-- Deadside and DayZ use the same Pirates Bot economy.
 """
 
 
@@ -2532,7 +2555,7 @@ def _pirate_ai_extract_text(payload):
     return "\n".join(chunks).strip()
 
 
-def _pirate_ai_request(question, command_list):
+def _pirate_ai_request(question, command_list, recent_history=''):
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY is not configured")
 
@@ -2544,8 +2567,11 @@ def _pirate_ai_request(question, command_list):
             + "\n\nLIVE SLASH COMMANDS CURRENTLY REGISTERED:\n"
             + (command_list or "No live command list available.")
         ),
-        "input": question,
-        "max_output_tokens": 350,
+        "input": (
+            (f"RECENT CONVERSATION:\n{recent_history}\n\n" if recent_history else "")
+            + f"USER MESSAGE:\n{question}"
+        ),
+        "max_output_tokens": 500,
     }).encode("utf-8")
 
     api_request = urllib.request.Request(
@@ -2578,8 +2604,29 @@ def _pirate_ai_request(question, command_list):
 
 
 def _pirate_helper_fallback(question):
-    """Basic help continues to work even if the AI API is unavailable."""
-    q = question.casefold()
+    """Human-ish basic replies if OpenAI is unavailable."""
+    q = question.casefold().strip()
+
+    if any(x in q for x in ("hello", "hi ", "hey", "hiya", "ahoy")) or q in {"hi", "hello", "hey"}:
+        return random.choice([
+            "Ahoy matey! ☠️ What can I help ye with?",
+            "Hey there, captain. What are we sorting out today? 🏴‍☠️",
+            "Ahoy! I'm here. What do ye need?",
+        ])
+
+    if "how are you" in q:
+        return random.choice([
+            "Doing grand, matey — no leaks in the ship and the code's still floating. ☠️",
+            "Can't complain, captain. Still sailing and answering questions. 🏴‍☠️",
+        ])
+
+    if "joke" in q or "make me laugh" in q:
+        return random.choice([
+            "Why don't pirates shower before they walk the plank? Because they'll just wash up on shore. ☠️",
+            "Why was the pirate so good at coding? He always knew when to use ARRR-guments. 🏴‍☠️",
+            "What did the pirate say when his Wi-Fi died? Arrr, we've lost the connection to the seven C's. 📡☠️",
+            "Why are pirates terrible at the alphabet? They spend years at C. 🏴‍☠️",
+        ])
 
     matches = [
         (("balance", "wallet", "how much money"), "`/balance` shows your wallet and bank."),
@@ -2588,40 +2635,66 @@ def _pirate_helper_fallback(question):
         (("roulette",), "Use `/roulette amount:500 choice:red`."),
         (("slots", "slot machine"), "Use `/slots bet:500`."),
         (("daily",), "Use `/daily`."),
-        (("earn money", "work"), "Use `/work`."),
         (("jobs", "job list", "career"), "Use `/jobs`, then `/choosejob job:<job id>`."),
-        (("jobwork", "work my job", "job work"), "Use `/jobwork`."),
-        (("job info", "job progress"), "Use `/jobinfo`."),
         (("deadside link", "link deadside"), "Use `/ds link gamertag:YourGamertag`."),
         (("deadside stats", "ds stats"), "Use `/ds stats` or `/dsstats`."),
-        (("deadside session",), "Use `/ds session` or `/session`."),
-        (("deadside bounty",), "Use `/ds bounty_create gamertag:Player amount:500`."),
         (("dayz link", "link dayz"), "Use `/dz link gamertag:YourGamertag`."),
         (("whereami", "where am i", "coordinates"), "For DayZ use `/dz whereami`."),
-        (("dayz stats",), "Use `/dz stats`."),
-        (("dayz bounty",), "Use `/dz bounty gamertag:Player amount:500`."),
         (("buy", "shop", "purchase"), "For the DayZ shop use `/buy item:<key> quantity:1`."),
         (("dashboard", "website"), "Dashboard: https://amusing-inspiration-production-eab1.up.railway.app/"),
+        (("force link", "admin link"), "Admins can use `/force link` for Deadside or DayZ."),
     ]
 
     for keywords, answer in matches:
         if any(keyword in q for keyword in keywords):
-            return f"☠️ **Pirate Helper**\n{answer}"
+            return f"☠️ {answer}"
 
     return (
-        "☠️ **Pirate Helper**\n"
-        "I couldn't find a confident Pirates Bot command for that. "
-        "Check the help guide or ask an administrator."
+        "☠️ I can still help with basic Pirates Bot commands while the full AI is offline, "
+        "but I need the OpenAI connection for general questions and proper conversation."
     )
+
+
+def _pirate_history_text(guild_id, user_id):
+    key = (str(guild_id), str(user_id))
+    turns = _pirate_ai_history.get(key, [])
+    lines = []
+    for turn in turns[-6:]:
+        role = turn.get("role", "user")
+        text = str(turn.get("text", "")).strip()
+        if text:
+            lines.append(f"{role.upper()}: {text[:700]}")
+    return "\n".join(lines)
+
+
+def _pirate_history_add(guild_id, user_id, role, text):
+    key = (str(guild_id), str(user_id))
+    history = _pirate_ai_history.setdefault(key, [])
+    history.append({
+        "role": role,
+        "text": str(text)[:1000],
+        "time": time.time(),
+    })
+    # Keep only a small recent window in memory.
+    del history[:-8]
 
 
 async def process_pirate_ai_helper(message):
     content = str(message.content or "").strip()
 
-    # Only trigger when a message starts with the standalone word Pirate.
-    match = re.match(r"(?is)^pirate\b[\s,:-]*(.*)$", content)
+    # Trigger when a message starts with the standalone word "Pirate".
+    # Accepts examples such as:
+    # Pirate what command...
+    # Pirate, what command...
+    # PIRATE: how do I...
+    match = re.match(r"(?is)^\s*pirate\b[\s,:;.!?-]*(.*)$", content)
     if not match:
         return False
+
+    print(
+        f"Pirate AI trigger: guild={message.guild.id} "
+        f"user={message.author.id} channel={message.channel.id}"
+    )
 
     if PIRATE_AI_CHANNEL_IDS and str(message.channel.id) not in PIRATE_AI_CHANNEL_IDS:
         return False
@@ -2653,14 +2726,25 @@ async def process_pirate_ai_helper(message):
         return True
 
     _pirate_ai_last_used[user_key] = now
+    _pirate_history_add(
+        message.guild.id,
+        message.author.id,
+        "user",
+        question,
+    )
 
     async with message.channel.typing():
         try:
             if OPENAI_API_KEY:
+                recent_history = _pirate_history_text(
+                    message.guild.id,
+                    message.author.id,
+                )
                 answer = await asyncio.to_thread(
                     _pirate_ai_request,
                     question,
                     _pirate_live_commands(),
+                    recent_history,
                 )
             else:
                 answer = _pirate_helper_fallback(question)
@@ -2668,6 +2752,13 @@ async def process_pirate_ai_helper(message):
         except Exception as error:
             print(f"Pirate AI Helper error: {error}")
             answer = _pirate_helper_fallback(question)
+
+    _pirate_history_add(
+        message.guild.id,
+        message.author.id,
+        "assistant",
+        answer,
+    )
 
     await message.reply(
         answer,
@@ -2813,18 +2904,20 @@ async def on_message(message):
     if await process_pirate_ai_helper(message):
         return
 
-    # Update activity tracking
+    # Update activity tracking. This must never break normal message handling.
     activity = load_activity()
     uid = str(message.author.id)
 
-    activity.setdefault(
-        uid,
-        {
-            "messages": 0
-        }
-    )
+    record = activity.setdefault(uid, {"messages": 0})
+    if not isinstance(record, dict):
+        record = {"messages": 0}
+        activity[uid] = record
 
-    activity[uid]["messages"] += 1
+    try:
+        record["messages"] = int(record.get("messages", 0) or 0) + 1
+    except (TypeError, ValueError):
+        record["messages"] = 1
+
     save_activity(activity)
 
     # Repost the configured sticky message
