@@ -90,10 +90,15 @@ def bot_api_post(endpoint, payload=None):
 
 
 def save_and_apply_feature(feature, settings):
-    """Send settings to the bot first, then ask the bot to apply them."""
+    """Save/apply settings only for the Discord server currently selected."""
+    guild_id = str(session.get("selected_guild_id", "")).strip()
+    payload_settings = settings
+    if guild_id and isinstance(settings, dict) and isinstance(settings.get("guilds"), dict):
+        payload_settings = settings.get("guilds", {}).get(guild_id, {})
+    payload = {"guild_id": guild_id, "settings": payload_settings}
     save_result = bot_api_post(
         f"/api/dashboard/settings/{feature}",
-        settings,
+        payload,
     )
     if not isinstance(save_result, dict) or not save_result.get("ok"):
         return save_result or {
@@ -101,7 +106,7 @@ def save_and_apply_feature(feature, settings):
             "error": f"The bot could not save {feature} settings",
         }
 
-    apply_result = bot_api_post(f"/api/dashboard/apply/{feature}")
+    apply_result = bot_api_post(f"/api/dashboard/apply/{feature}", {"guild_id": guild_id})
     if not isinstance(apply_result, dict):
         return {
             "ok": False,
@@ -713,6 +718,25 @@ DEADSIDE_FILE = os.path.join(BASE_DIR, "deadside.json")
 DAYZ_FILE = os.path.join(BASE_DIR, "dayz.json")
 TRANSCRIPTS_FOLDER = os.path.join(BASE_DIR, "ticket_transcripts")
 
+
+# ------------------- PER-SERVER DASHBOARD STORAGE -------------------
+SERVER_SCOPED_DASHBOARD_FILES = {
+    ECONOMY_FILE, WELCOME_FILE, TICKET_FILE, EMBED_FILE,
+    REACTION_ROLE_FILE, RULES_FILE, POLL_FILE, GIVEAWAY_FILE,
+}
+
+def guild_feature_path(path, guild_id=None):
+    """Return a private dashboard config path for the selected Discord server."""
+    if path not in SERVER_SCOPED_DASHBOARD_FILES:
+        return path
+    gid = str(guild_id or session.get("selected_guild_id", "")).strip()
+    if not gid or not gid.isdigit():
+        return path
+    folder = os.path.join(BASE_DIR, "guild_data", gid)
+    os.makedirs(folder, exist_ok=True)
+    return os.path.join(folder, os.path.basename(path))
+
+
 def load_or_create_json(path, default):
     if not os.path.exists(path):
         with open(path, "w", encoding="utf-8") as file:
@@ -1015,7 +1039,7 @@ def commands_page():
 @app.route("/economy", methods=["GET", "POST"])
 def economy():
 
-    with open(ECONOMY_FILE, "r", encoding="utf-8") as file:
+    with open(guild_feature_path(ECONOMY_FILE), "r", encoding="utf-8") as file:
         economy = json.load(file)
 
     # ---------- Defaults ----------
@@ -1071,7 +1095,7 @@ def economy():
 
     if request.method == "POST":
         # Leave your existing save code here for now.
-        with open(ECONOMY_FILE, "w", encoding="utf-8") as file:
+        with open(guild_feature_path(ECONOMY_FILE), "w", encoding="utf-8") as file:
             json.dump(economy, file, indent=4)
 
         apply_result = save_and_apply_feature("economy", economy)
@@ -1084,7 +1108,7 @@ def economy():
 @app.route("/welcome", methods=["GET", "POST"])
 def welcome():
 
-    with open(WELCOME_FILE, "r", encoding="utf-8") as file:
+    with open(guild_feature_path(WELCOME_FILE), "r", encoding="utf-8") as file:
         welcome = json.load(file)
 
 
@@ -1113,7 +1137,7 @@ def welcome():
         welcome["dm"]["message"] = request.form["dm_message"]
 
 
-        with open(WELCOME_FILE, "w", encoding="utf-8") as file:
+        with open(guild_feature_path(WELCOME_FILE), "w", encoding="utf-8") as file:
             json.dump(welcome, file, indent=4)
 
         apply_result = save_and_apply_feature("welcome", welcome)
@@ -1149,7 +1173,7 @@ def tickets():
     }
 
     try:
-        with open(TICKET_FILE, "r", encoding="utf-8") as file:
+        with open(guild_feature_path(TICKET_FILE), "r", encoding="utf-8") as file:
             ticket = json.load(file)
     except (FileNotFoundError, json.JSONDecodeError):
         ticket = default_ticket.copy()
@@ -1347,7 +1371,7 @@ def tickets():
         for option in ticket["options"]:
             option.pop("channel_prefix", None)
 
-        with open(TICKET_FILE, "w", encoding="utf-8") as file:
+        with open(guild_feature_path(TICKET_FILE), "w", encoding="utf-8") as file:
             json.dump(
                 ticket,
                 file,
@@ -2780,7 +2804,7 @@ def logs():
 @app.route("/embeds", methods=["GET", "POST"])
 def embeds():
 
-    if not os.path.exists(EMBED_FILE):
+    if not os.path.exists(guild_feature_path(EMBED_FILE)):
 
         embed = {
             "enabled": False,
@@ -2793,13 +2817,13 @@ def embeds():
             "image": ""
         }
 
-        with open(EMBED_FILE, "w", encoding="utf-8") as file:
+        with open(guild_feature_path(EMBED_FILE), "w", encoding="utf-8") as file:
             json.dump(embed, file, indent=4)
 
         save_and_apply_feature("embeds", embed)
 
 
-    with open(EMBED_FILE, "r", encoding="utf-8") as file:
+    with open(guild_feature_path(EMBED_FILE), "r", encoding="utf-8") as file:
         embed = json.load(file)
 
 
@@ -2851,7 +2875,7 @@ def embeds():
         )
 
 
-        with open(EMBED_FILE, "w", encoding="utf-8") as file:
+        with open(guild_feature_path(EMBED_FILE), "w", encoding="utf-8") as file:
             json.dump(embed, file, indent=4)
 
         save_dashboard_snapshot(
@@ -2880,7 +2904,7 @@ def embeds():
 @app.route("/reaction-roles", methods=["GET", "POST"])
 def reaction_roles():
 
-    if not os.path.exists(REACTION_ROLE_FILE):
+    if not os.path.exists(guild_feature_path(REACTION_ROLE_FILE)):
 
         roles = {
 
@@ -2895,11 +2919,11 @@ def reaction_roles():
         }
 
 
-        with open(REACTION_ROLE_FILE, "w", encoding="utf-8") as file:
+        with open(guild_feature_path(REACTION_ROLE_FILE), "w", encoding="utf-8") as file:
             json.dump(roles, file, indent=4)
 
 
-    with open(REACTION_ROLE_FILE, "r", encoding="utf-8") as file:
+    with open(guild_feature_path(REACTION_ROLE_FILE), "r", encoding="utf-8") as file:
         roles = json.load(file)
 
 
@@ -2935,7 +2959,7 @@ def reaction_roles():
             })
 
 
-        with open(REACTION_ROLE_FILE, "w", encoding="utf-8") as file:
+        with open(guild_feature_path(REACTION_ROLE_FILE), "w", encoding="utf-8") as file:
             json.dump(
                 roles,
                 file,
@@ -2954,7 +2978,7 @@ def reaction_roles():
     
 @app.route("/polls", methods=["GET", "POST"])
 def polls():
-    poll_data = load_or_create_json(POLL_FILE, {
+    poll_data = load_or_create_json(guild_feature_path(POLL_FILE), {
         "channel_id": "",
         "title": "📊 Poll",
         "question": "",
@@ -2971,7 +2995,7 @@ def polls():
         poll_data["footer"] = request.form.get("footer", "").strip()
         poll_data["guild_id"] = str(session.get("selected_guild_id", ""))
 
-        with open(POLL_FILE, "w", encoding="utf-8") as file:
+        with open(guild_feature_path(POLL_FILE), "w", encoding="utf-8") as file:
             json.dump(poll_data, file, indent=4, ensure_ascii=False)
 
         result = save_and_apply_feature("polls", poll_data)
@@ -2986,7 +3010,7 @@ def polls():
 
 @app.route("/giveaways", methods=["GET", "POST"])
 def giveaways():
-    giveaway_data = load_or_create_json(GIVEAWAY_FILE, {
+    giveaway_data = load_or_create_json(guild_feature_path(GIVEAWAY_FILE), {
         "channel_id": "",
         "title": "🎉 Giveaway",
         "prize": "",
@@ -3009,7 +3033,7 @@ def giveaways():
         giveaway_data["image_url"] = request.form.get("image_url", "").strip()
         giveaway_data["guild_id"] = str(session.get("selected_guild_id", ""))
 
-        with open(GIVEAWAY_FILE, "w", encoding="utf-8") as file:
+        with open(guild_feature_path(GIVEAWAY_FILE), "w", encoding="utf-8") as file:
             json.dump(giveaway_data, file, indent=4, ensure_ascii=False)
 
         result = save_and_apply_feature("giveaways", giveaway_data)
@@ -3027,7 +3051,7 @@ def giveaways():
 @app.route("/rules", methods=["GET", "POST"])
 def rules():
 
-    if not os.path.exists(RULES_FILE):
+    if not os.path.exists(guild_feature_path(RULES_FILE)):
         rules_data = {
             "menu": {
                 "channel_id": "",
@@ -3041,7 +3065,7 @@ def rules():
             "sections": {}
         }
 
-        with open(RULES_FILE, "w", encoding="utf-8") as file:
+        with open(guild_feature_path(RULES_FILE), "w", encoding="utf-8") as file:
             json.dump(
                 rules_data,
                 file,
@@ -3049,7 +3073,7 @@ def rules():
                 ensure_ascii=False
             )
 
-    with open(RULES_FILE, "r", encoding="utf-8") as file:
+    with open(guild_feature_path(RULES_FILE), "r", encoding="utf-8") as file:
         rules_data = json.load(file)
 
     if request.method == "POST":
@@ -3188,7 +3212,7 @@ def rules():
                     section.get("thumbnail_url", "")
                 )
 
-        with open(RULES_FILE, "w", encoding="utf-8") as file:
+        with open(guild_feature_path(RULES_FILE), "w", encoding="utf-8") as file:
             json.dump(
                 rules_data,
                 file,

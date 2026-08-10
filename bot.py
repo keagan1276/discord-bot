@@ -531,8 +531,12 @@ def dashboard_apply_feature(feature):
     if not bot.is_ready():
         return jsonify({"error": "Bot is not ready"}), 503
 
+    payload = request.get_json(silent=True) or {}
+    guild_id = str(payload.get("guild_id", "")).strip()
+    if feature in SERVER_SCOPED_FEATURES and not guild_id.isdigit():
+        return jsonify({"error": "A valid guild_id is required"}), 400
     future = asyncio.run_coroutine_threadsafe(
-        apply_dashboard_feature(feature),
+        apply_dashboard_feature(feature, guild_id=guild_id or None),
         bot.loop
     )
     try:
@@ -698,6 +702,30 @@ FEATURE_FILES = {
     "dayz": DAYZ_FILE,
 }
 
+SERVER_SCOPED_FEATURES = {
+    "welcome", "tickets", "moderation", "embeds", "reaction_roles",
+    "rules", "economy", "polls", "giveaways"
+}
+
+def _guild_feature_read(path, guild_id, default=None):
+    default = {} if default is None else default
+    root = _read_config(path, {"guilds": {}})
+    if isinstance(root, dict) and isinstance(root.get("guilds"), dict):
+        value = root["guilds"].get(str(guild_id))
+        if isinstance(value, dict):
+            return value
+        return json.loads(json.dumps(default))
+    # Legacy single-server file: do not expose it to every guild.
+    return json.loads(json.dumps(default))
+
+def _guild_feature_write(path, guild_id, settings):
+    root = _read_config(path, {"guilds": {}})
+    if not isinstance(root, dict) or not isinstance(root.get("guilds"), dict):
+        root = {"guilds": {}}
+    root["guilds"][str(guild_id)] = settings
+    _write_config(path, root)
+    return root
+
 
 @app.route("/api/dashboard/settings/deadside/<guild_id>", methods=["GET"])
 def dashboard_get_deadside_settings(guild_id):
@@ -725,69 +753,61 @@ def dashboard_get_dayz_settings(guild_id):
 
 @app.route("/api/dashboard/settings/<feature>", methods=["POST"])
 def dashboard_save_feature(feature):
-    """Receive dashboard settings and persist them in the bot service."""
+    """Persist dashboard settings without allowing one guild to overwrite another."""
     if not dashboard_authorized():
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
-
     target_file = FEATURE_FILES.get(feature)
     if target_file is None:
         return jsonify({"ok": False, "error": "Unknown feature"}), 404
-
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
-        return jsonify({
-            "ok": False,
-            "error": "The request body must be a JSON object"
-        }), 400
+        return jsonify({"ok": False, "error": "The request body must be a JSON object"}), 400
 
-    if feature == "deadside":
-        guild_id = str(payload.get("guild_id", "")).strip()
+    # Deadside/DayZ already use their own servers[guild_id] format.
+    if feature in {"deadside", "dayz"}:
+        settings = payload.get("settings", payload)
+        guild_id = str(payload.get("guild_id") or settings.get("guild_id", "")).strip()
         if not guild_id.isdigit():
             return jsonify({"ok": False, "error": "A valid guild_id is required"}), 400
-        root = _read_config(DEADSIDE_FILE, {"servers": {}})
+        root = _read_config(target_file, {"servers": {}})
         servers = root.setdefault("servers", {})
         existing = servers.get(guild_id, {}) if isinstance(servers.get(guild_id), dict) else {}
-        submitted_password = str(payload.get("password", ""))
-        if not submitted_password and existing.get("password"):
-            payload["password"] = existing["password"]
-        payload.pop("password_configured", None)
-        servers[guild_id] = payload
-        payload = root
-
-    if feature == "dayz":
+        settings = dict(settings)
+        if feature == "deadside":
+            if not str(settings.get("password", "")) and existing.get("password"):
+                settings["password"] = existing["password"]
+            settings.pop("password_configured", None)
+        else:
+            if not str(settings.get("nitrado_api_token", "")) and existing.get("nitrado_api_token"):
+                settings["nitrado_api_token"] = existing["nitrado_api_token"]
+            if not str(settings.get("ftp_password", "")) and existing.get("ftp_password"):
+                settings["ftp_password"] = existing["ftp_password"]
+            settings.pop("api_token_configured", None)
+            settings.pop("ftp_password_configured", None)
+        settings["guild_id"] = guild_id
+        servers[guild_id] = settings
+        _write_config(target_file, root)
+    elif feature in SERVER_SCOPED_FEATURES:
         guild_id = str(payload.get("guild_id", "")).strip()
-        if not guild_id.isdigit():
-            return jsonify({"ok": False, "error": "A valid guild_id is required"}), 400
-        root = _read_config(DAYZ_FILE, {"servers": {}})
-        servers = root.setdefault("servers", {})
-        existing = servers.get(guild_id, {}) if isinstance(servers.get(guild_id), dict) else {}
-        if not str(payload.get("nitrado_api_token", "")) and existing.get("nitrado_api_token"):
-            payload["nitrado_api_token"] = existing["nitrado_api_token"]
-        if not str(payload.get("ftp_password", "")) and existing.get("ftp_password"):
-            payload["ftp_password"] = existing["ftp_password"]
-        payload.pop("api_token_configured", None)
-        payload.pop("ftp_password_configured", None)
-        servers[guild_id] = payload
-        payload = root
+        settings = payload.get("settings")
+        if not guild_id.isdigit() or not isinstance(settings, dict):
+            return jsonify({"ok": False, "error": "guild_id and settings are required"}), 400
+        settings = dict(settings)
+        settings["guild_id"] = guild_id
+        _guild_feature_write(target_file, guild_id, settings)
+    else:
+        settings = payload.get("settings", payload)
+        _write_config(target_file, settings)
 
-    try:
-        temporary_file = f"{target_file}.tmp"
-        with open(temporary_file, "w", encoding="utf-8") as file:
-            json.dump(payload, file, indent=4, ensure_ascii=False)
-        os.replace(temporary_file, target_file)
-    except OSError as error:
-        print(f"Dashboard save error ({feature}): {error}")
-        return jsonify({"ok": False, "error": str(error)}), 500
+    return jsonify({"ok": True, "feature": feature, "guild_id": str(payload.get("guild_id", "")), "message": f"{feature} settings saved for this server"})
 
-    return jsonify({
-        "ok": True,
-        "feature": feature,
-        "message": f"{feature} settings saved by the bot service"
-    })
-def load_rules() -> dict:
+def load_rules(guild_id=None) -> dict:
+    if guild_id is not None:
+        return _guild_feature_read(RULES_FILE, guild_id, {"menu": {}, "sections": {}})
     try:
         with open(RULES_FILE, "r", encoding="utf-8") as file:
-            return json.load(file)
+            data = json.load(file)
+            return data if "guilds" not in data else {"menu": {}, "sections": {}}
     except FileNotFoundError:
         return {"menu": {}, "sections": {}}
     except json.JSONDecodeError as error:
@@ -814,7 +834,7 @@ class RuleSectionButton(discord.ui.Button):
         self.section_key = section_key
 
     async def callback(self, interaction: discord.Interaction):
-        section = load_rules().get("sections", {}).get(self.section_key)
+        section = load_rules(interaction.guild_id).get("sections", {}).get(self.section_key)
         if section is None:
             await interaction.response.send_message(
                 "❌ This rules section no longer exists.",
@@ -843,9 +863,9 @@ class RuleSectionButton(discord.ui.Button):
 
 
 class RulesMenuView(discord.ui.View):
-    def __init__(self):
+    def __init__(self, guild_id=None):
         super().__init__(timeout=None)
-        sections = load_rules().get("sections", {})
+        sections = load_rules(guild_id).get("sections", {})
 
         for index, (section_key, section) in enumerate(sections.items()):
             row = index // 5
@@ -857,7 +877,7 @@ class RulesMenuView(discord.ui.View):
 @bot.command(name="rulesmenu")
 @commands.has_permissions(administrator=True)
 async def rules_menu(ctx: commands.Context):
-    rules_data = load_rules()
+    rules_data = load_rules(ctx.guild.id)
     menu = rules_data.get("menu", {})
     sections = rules_data.get("sections", {})
 
@@ -896,7 +916,7 @@ async def rules_menu(ctx: commands.Context):
             await ctx.send("❌ I could not find the selected rules channel.")
             return
 
-    message = await target_channel.send(embed=embed, view=RulesMenuView())
+    message = await target_channel.send(embed=embed, view=RulesMenuView(guild_id))
     menu["message_id"] = str(message.id)
 
     with open(RULES_FILE, "w", encoding="utf-8") as file:
@@ -4390,10 +4410,15 @@ DEFAULT_TICKET_DATA = {
 }
 
 
-def load_ticket_settings() -> dict:
+def load_ticket_settings(guild_id=None) -> dict:
     try:
-        with open(TICKET_FILE, "r", encoding="utf-8") as file:
-            data = json.load(file)
+        if guild_id is not None:
+            data = _guild_feature_read(TICKET_FILE, guild_id, {})
+        else:
+            with open(TICKET_FILE, "r", encoding="utf-8") as file:
+                data = json.load(file)
+                if isinstance(data, dict) and "guilds" in data:
+                    data = {}
     except (FileNotFoundError, json.JSONDecodeError):
         data = {}
 
@@ -4434,14 +4459,13 @@ def load_ticket_settings() -> dict:
     return data
 
 
-def save_ticket_settings(data: dict) -> None:
+def save_ticket_settings(data: dict, guild_id=None) -> None:
+    gid = str(guild_id or data.get("guild_id", "")).strip()
+    if gid.isdigit():
+        _guild_feature_write(TICKET_FILE, gid, data)
+        return
     with open(TICKET_FILE, "w", encoding="utf-8") as file:
-        json.dump(
-            data,
-            file,
-            indent=4,
-            ensure_ascii=False
-        )
+        json.dump(data, file, indent=4, ensure_ascii=False)
 
 
 def clean_ticket_channel_name(value: str) -> str:
@@ -8176,7 +8200,7 @@ async def before_deadside_killfeed_loop():
     await bot.wait_until_ready()
 
 
-async def apply_dashboard_feature(feature):
+async def apply_dashboard_feature(feature, guild_id=None):
     if feature == "dayz":
         servers = _dz_servers()
         enabled = [cfg for cfg in servers.values() if isinstance(cfg, dict) and cfg.get("enabled")]
@@ -8216,7 +8240,7 @@ async def apply_dashboard_feature(feature):
         return {"message": f"Deadside killfeed configured for {len(enabled)} server(s)"}
 
     if feature == "rules":
-        data = _read_config(RULES_FILE, {"menu": {}, "sections": {}})
+        data = _guild_feature_read(RULES_FILE, guild_id, {"menu": {}, "sections": {}})
         menu = data.setdefault("menu", {})
         if not data.get("sections"):
             raise RuntimeError("Add at least one rules section first.")
@@ -8231,12 +8255,12 @@ async def apply_dashboard_feature(feature):
         if menu.get("thumbnail_url"): embed.set_thumbnail(url=menu["thumbnail_url"])
         if menu.get("image_url"): embed.set_image(url=menu["image_url"])
         if menu.get("footer"): embed.set_footer(text=menu["footer"])
-        await _send_or_edit(channel, menu, "message_id", embed=embed, view=RulesMenuView())
-        _write_config(RULES_FILE, data)
+        await _send_or_edit(channel, menu, "message_id", embed=embed, view=RulesMenuView(guild_id))
+        _guild_feature_write(RULES_FILE, guild_id, data)
         return {"message": f"Rules menu updated in #{channel.name}"}
 
     if feature == "embeds":
-        data = _read_config(EMBED_FILE, {})
+        data = _guild_feature_read(EMBED_FILE, guild_id, {})
         channel = _find_text_channel(data.get("channel_id"))
         if not channel: raise RuntimeError("Choose a valid embed channel.")
         embed = discord.Embed(
@@ -8248,11 +8272,11 @@ async def apply_dashboard_feature(feature):
         if data.get("image"): embed.set_image(url=data["image"])
         if data.get("footer"): embed.set_footer(text=data["footer"])
         await _send_or_edit(channel, data, "message_id", embed=embed)
-        _write_config(EMBED_FILE, data)
+        _guild_feature_write(EMBED_FILE, guild_id, data)
         return {"message": f"Embed updated in #{channel.name}"}
 
     if feature == "tickets":
-        data = load_ticket_settings()
+        data = load_ticket_settings(guild_id)
 
         if not data.get("enabled", True):
             raise RuntimeError(
@@ -8349,7 +8373,7 @@ async def apply_dashboard_feature(feature):
         }
 
     if feature == "reaction_roles":
-        data = _read_config(REACTION_ROLE_FILE, {"roles": []})
+        data = _guild_feature_read(REACTION_ROLE_FILE, guild_id, {"roles": []})
         channel = _find_text_channel(data.get("channel_id"))
         if not channel: raise RuntimeError("Choose a valid reaction-role channel.")
         lines = ["React below to receive a role:"]
@@ -8362,11 +8386,11 @@ async def apply_dashboard_feature(feature):
                 try: await message.add_reaction(item["emoji"])
                 except discord.HTTPException: pass
         data["guild_id"] = str(channel.guild.id)
-        _write_config(REACTION_ROLE_FILE, data)
+        _guild_feature_write(REACTION_ROLE_FILE, guild_id, data)
         return {"message": f"Reaction roles updated in #{channel.name}"}
 
     if feature == "welcome":
-        data = _read_config(WELCOME_FILE, {})
+        data = _guild_feature_read(WELCOME_FILE, guild_id, {})
         channel = _find_text_channel(data.get("channel") or data.get("channel_id"))
         if not channel: raise RuntimeError("Choose a valid welcome channel.")
         data["guild_id"] = str(channel.guild.id)
@@ -8376,11 +8400,11 @@ async def apply_dashboard_feature(feature):
         image = data.get("banner_url") or data.get("image_url")
         if image: embed.set_image(url=image)
         await _send_or_edit(channel, data, "preview_message_id", embed=embed)
-        _write_config(WELCOME_FILE, data)
+        _guild_feature_write(WELCOME_FILE, guild_id, data)
         return {"message": f"Welcome settings applied in #{channel.name}"}
 
     if feature == "moderation":
-        data = _read_config(MODERATION_FILE, {})
+        data = _guild_feature_read(MODERATION_FILE, guild_id, {})
         channel = _find_text_channel(data.get("log_channel"))
         if not channel: raise RuntimeError("Choose a valid moderation log channel.")
         automod = data.get("automod", {})
@@ -8393,11 +8417,11 @@ async def apply_dashboard_feature(feature):
         embed = discord.Embed(title="🛡 Moderation settings updated", description=description, colour=discord.Color.red())
         await _send_or_edit(channel, data, "status_message_id", embed=embed)
         data["guild_id"] = str(channel.guild.id)
-        _write_config(MODERATION_FILE, data)
+        _guild_feature_write(MODERATION_FILE, guild_id, data)
         return {"message": f"Moderation settings applied for {channel.guild.name}"}
 
     if feature == "polls":
-        data = _read_config(POLL_FILE, {})
+        data = _guild_feature_read(POLL_FILE, guild_id, {})
         channel = _find_text_channel(data.get("channel_id"))
         if not channel:
             raise RuntimeError("Choose a valid poll channel.")
@@ -8421,11 +8445,11 @@ async def apply_dashboard_feature(feature):
         message = await channel.send(embed=embed, view=PollView(question))
         data["message_id"] = str(message.id)
         data["guild_id"] = str(channel.guild.id)
-        _write_config(POLL_FILE, data)
+        _guild_feature_write(POLL_FILE, guild_id, data)
         return {"message": f"Poll published in #{channel.name}", "message_id": str(message.id)}
 
     if feature == "giveaways":
-        data = _read_config(GIVEAWAY_FILE, {})
+        data = _guild_feature_read(GIVEAWAY_FILE, guild_id, {})
         channel = _find_text_channel(data.get("channel_id"))
         if not channel:
             raise RuntimeError("Choose a valid giveaway channel.")
@@ -8464,7 +8488,7 @@ async def apply_dashboard_feature(feature):
         view.message = message
         data["message_id"] = str(message.id)
         data["guild_id"] = str(channel.guild.id)
-        _write_config(GIVEAWAY_FILE, data)
+        _guild_feature_write(GIVEAWAY_FILE, guild_id, data)
         return {"message": f"Giveaway started in #{channel.name}", "message_id": str(message.id)}
 
     if feature == "settings":
