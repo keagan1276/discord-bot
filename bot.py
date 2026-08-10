@@ -663,8 +663,14 @@ XBOX_PLAYERS_FILE = os.path.join(BASE_DIR, "xbox_players.json")
 OPENXBL_API_KEY = os.getenv("OPENXBL_API_KEY", "").strip()
 OPENXBL_BASE_URL = os.getenv(
     "OPENXBL_BASE_URL",
-    "https://api.xbl.io/api/v2"
+    "https://api.xbl.io/v2"
 ).rstrip("/")
+
+# OpenXBL's api.xbl.io gateway serves /v2/... directly. Older Pirates Bot
+# builds used /api/v2, which now returns HTTP 404. Repair an old Railway
+# override automatically so the integration keeps working after deployment.
+if OPENXBL_BASE_URL.rstrip("/").lower() == "https://api.xbl.io/api/v2":
+    OPENXBL_BASE_URL = "https://api.xbl.io/v2"
 
 TRANSCRIPTS_FOLDER = os.path.join(BASE_DIR, "ticket_transcripts")
 os.makedirs(TRANSCRIPTS_FOLDER, exist_ok=True)
@@ -2727,7 +2733,8 @@ def _xbox_lookup_profile(gamertag):
 
     errors = []
 
-    # Current OpenXBL public docs advertise the player/gamertag endpoint.
+    # OpenXBL v2 gamertag lookup. The api.xbl.io host expects /v2,
+    # not /api/v2.
     for path, params in (
         (f"player/gamertag/{encoded}", None),
         ("friends/search", {"gt": gamertag}),
@@ -2744,10 +2751,14 @@ def _xbox_lookup_profile(gamertag):
         except Exception as error:
             errors.append(str(error))
 
+    if errors:
+        raise RuntimeError(
+            "Xbox profile lookup failed. "
+            + " | ".join(errors[-2:])
+        )
+
     raise RuntimeError(
-        errors[-1]
-        if errors
-        else "Xbox profile lookup failed."
+        "Xbox profile lookup failed."
     )
 
 
