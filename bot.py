@@ -7318,6 +7318,235 @@ tree.add_command(help_group)
 
     # ------------------- READY -------------------
 
+
+# =========================================================
+# FONT / TEXT STYLE COMMAND
+# =========================================================
+
+_FONT_ASCII_LOWER = "abcdefghijklmnopqrstuvwxyz"
+_FONT_ASCII_UPPER = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+_FONT_DIGITS = "0123456789"
+
+
+def _font_range(start: int, count: int) -> str:
+    return "".join(chr(start + index) for index in range(count))
+
+
+FONT_STYLES = {
+    "bold": {
+        "label": "Bold",
+        "lower": _font_range(0x1D41A, 26),
+        "upper": _font_range(0x1D400, 26),
+        "digits": _font_range(0x1D7CE, 10),
+    },
+    "italic": {
+        "label": "Italic",
+        "lower": _font_range(0x1D44E, 26),
+        "upper": _font_range(0x1D434, 26),
+        "digits": _FONT_DIGITS,
+    },
+    "bold_italic": {
+        "label": "Bold Italic",
+        "lower": _font_range(0x1D482, 26),
+        "upper": _font_range(0x1D468, 26),
+        "digits": _FONT_DIGITS,
+    },
+    "sans": {
+        "label": "Sans Serif",
+        "lower": _font_range(0x1D5BA, 26),
+        "upper": _font_range(0x1D5A0, 26),
+        "digits": _font_range(0x1D7E2, 10),
+    },
+    "sans_bold": {
+        "label": "Sans Bold",
+        "lower": _font_range(0x1D5EE, 26),
+        "upper": _font_range(0x1D5D4, 26),
+        "digits": _font_range(0x1D7EC, 10),
+    },
+    "sans_italic": {
+        "label": "Sans Italic",
+        "lower": _font_range(0x1D622, 26),
+        "upper": _font_range(0x1D608, 26),
+        "digits": _FONT_DIGITS,
+    },
+    "sans_bold_italic": {
+        "label": "Sans Bold Italic",
+        "lower": _font_range(0x1D656, 26),
+        "upper": _font_range(0x1D63C, 26),
+        "digits": _FONT_DIGITS,
+    },
+    "monospace": {
+        "label": "Monospace",
+        "lower": _font_range(0x1D68A, 26),
+        "upper": _font_range(0x1D670, 26),
+        "digits": _font_range(0x1D7F6, 10),
+    },
+    "double": {
+        "label": "Double Struck",
+        "lower": _font_range(0x1D552, 26),
+        "upper": _font_range(0x1D538, 26),
+        "digits": _font_range(0x1D7D8, 10),
+    },
+    "fraktur": {
+        "label": "Fraktur",
+        "lower": _font_range(0x1D51E, 26),
+        "upper": _font_range(0x1D504, 26),
+        "digits": _FONT_DIGITS,
+    },
+    "bold_fraktur": {
+        "label": "Bold Fraktur",
+        "lower": _font_range(0x1D586, 26),
+        "upper": _font_range(0x1D56C, 26),
+        "digits": _FONT_DIGITS,
+    },
+    "script": {
+        "label": "Script",
+        "lower": _font_range(0x1D4B6, 26),
+        "upper": _font_range(0x1D49C, 26),
+        "digits": _FONT_DIGITS,
+    },
+    "bold_script": {
+        "label": "Bold Script",
+        "lower": _font_range(0x1D4EA, 26),
+        "upper": _font_range(0x1D4D0, 26),
+        "digits": _FONT_DIGITS,
+    },
+    "fullwidth": {
+        "label": "Fullwidth",
+        "lower": _font_range(0xFF41, 26),
+        "upper": _font_range(0xFF21, 26),
+        "digits": _font_range(0xFF10, 10),
+    },
+    "circled": {
+        "label": "Circled",
+        "lower": _font_range(0x24D0, 26),
+        "upper": _font_range(0x24B6, 26),
+        "digits": "⓪①②③④⑤⑥⑦⑧⑨",
+    },
+}
+
+
+_FONT_EXCEPTIONS = {
+    "script": {
+        "B": "ℬ", "E": "ℰ", "F": "ℱ", "H": "ℋ", "I": "ℐ",
+        "L": "ℒ", "M": "ℳ", "R": "ℛ",
+        "e": "ℯ", "g": "ℊ", "o": "ℴ",
+    },
+    "fraktur": {
+        "C": "ℭ", "H": "ℌ", "I": "ℑ", "R": "ℜ", "Z": "ℨ",
+    },
+    "double": {
+        "C": "ℂ", "H": "ℍ", "N": "ℕ", "P": "ℙ", "Q": "ℚ",
+        "R": "ℝ", "Z": "ℤ",
+    },
+    "italic": {
+        "h": "ℎ",
+    },
+}
+
+
+def pirates_apply_font_style(text: str, style_key: str) -> str:
+    style = FONT_STYLES.get(style_key)
+    if not style:
+        return text
+
+    translation = {}
+
+    for source, target in zip(_FONT_ASCII_LOWER, style["lower"]):
+        translation[source] = target
+
+    for source, target in zip(_FONT_ASCII_UPPER, style["upper"]):
+        translation[source] = target
+
+    for source, target in zip(_FONT_DIGITS, style["digits"]):
+        translation[source] = target
+
+    translation.update(_FONT_EXCEPTIONS.get(style_key, {}))
+
+    return "".join(
+        translation.get(character, character)
+        for character in str(text)
+    )
+
+
+@bot.tree.command(
+    name="font",
+    description="Change your message into a different Unicode text style"
+)
+@app_commands.describe(
+    style="Choose the font/text style",
+    message="The message you want to restyle"
+)
+@app_commands.choices(
+    style=[
+        app_commands.Choice(name="Bold", value="bold"),
+        app_commands.Choice(name="Italic", value="italic"),
+        app_commands.Choice(name="Bold Italic", value="bold_italic"),
+        app_commands.Choice(name="Sans Serif", value="sans"),
+        app_commands.Choice(name="Sans Bold", value="sans_bold"),
+        app_commands.Choice(name="Sans Italic", value="sans_italic"),
+        app_commands.Choice(name="Sans Bold Italic", value="sans_bold_italic"),
+        app_commands.Choice(name="Monospace", value="monospace"),
+        app_commands.Choice(name="Double Struck", value="double"),
+        app_commands.Choice(name="Fraktur", value="fraktur"),
+        app_commands.Choice(name="Bold Fraktur", value="bold_fraktur"),
+        app_commands.Choice(name="Script", value="script"),
+        app_commands.Choice(name="Bold Script", value="bold_script"),
+        app_commands.Choice(name="Fullwidth", value="fullwidth"),
+        app_commands.Choice(name="Circled", value="circled"),
+    ]
+)
+async def font_command(
+    interaction: discord.Interaction,
+    style: app_commands.Choice[str],
+    message: str
+):
+    message = str(message or "").strip()
+
+    if not message:
+        await interaction.response.send_message(
+            "❌ Enter a message to restyle.",
+            ephemeral=True
+        )
+        return
+
+    if len(message) > 1000:
+        await interaction.response.send_message(
+            "❌ Keep the message under 1,000 characters.",
+            ephemeral=True
+        )
+        return
+
+    styled = pirates_apply_font_style(
+        message,
+        style.value
+    )
+
+    if len(styled) > 1900:
+        styled = styled[:1900]
+
+    embed = discord.Embed(
+        title=f"✍️ {style.name}",
+        description=styled,
+        colour=discord.Colour.dark_red()
+    )
+    embed.add_field(
+        name="Copyable text",
+        value=f"```{styled}```"[:1024],
+        inline=False
+    )
+    embed.set_footer(
+        text="Pirates Bot • Font Generator"
+    )
+
+    await interaction.response.send_message(
+        embed=embed,
+        allowed_mentions=discord.AllowedMentions.none()
+    )
+
+
+
+
 # =========================================================
 # ADMIN MEMBER MODERATION SLASH COMMANDS
 # =========================================================
