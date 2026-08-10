@@ -1157,16 +1157,91 @@ def save_json(file, data):
     with open(file, "w") as f:
         json.dump(data, f, indent=4)
 
-def get_bank():
-    return load_json("bank.json", {})
+def _bank_root():
+    """
+    Economy balances are strictly isolated per Discord guild.
 
-def update_bank(user_id, change=0, bank=False):
-    users = get_bank()
+    New format:
+    {
+        "guilds": {
+            "<guild_id>": {
+                "users": {
+                    "<discord_user_id>": {
+                        "wallet": 0,
+                        "bank": 0,
+                        "last_daily": None
+                    }
+                }
+            }
+        }
+    }
+
+    Any old flat/global bank.json data is preserved under legacy_global once,
+    but it is never used as a live balance for any guild.
+    """
+    data = load_json("bank.json", {"guilds": {}})
+
+    if not isinstance(data, dict):
+        data = {"guilds": {}}
+
+    if "guilds" not in data:
+        legacy = {
+            str(key): value
+            for key, value in data.items()
+            if isinstance(value, dict)
+        }
+        data = {
+            "guilds": {},
+            "legacy_global": legacy
+        }
+        save_json("bank.json", data)
+
+    data.setdefault("guilds", {})
+    return data
+
+
+def get_bank(guild_id):
+    guild_id = str(guild_id or "").strip()
+    if not guild_id:
+        return {}
+
+    root = _bank_root()
+    guild_data = root["guilds"].setdefault(
+        guild_id,
+        {"users": {}}
+    )
+    users = guild_data.setdefault("users", {})
+
+    if not isinstance(users, dict):
+        users = {}
+        guild_data["users"] = users
+
+    return users
+
+
+def save_bank(guild_id, users):
+    guild_id = str(guild_id or "").strip()
+    if not guild_id:
+        raise ValueError("A guild_id is required for economy data.")
+
+    root = _bank_root()
+    root["guilds"].setdefault(
+        guild_id,
+        {"users": {}}
+    )["users"] = users
+    save_json("bank.json", root)
+
+
+def update_bank(guild_id, user_id, change=0, bank=False):
+    users = get_bank(guild_id)
     uid = str(user_id)
-    users.setdefault(uid, {"wallet": 0, "bank": 0, "last_daily": None})
+    users.setdefault(
+        uid,
+        {"wallet": 0, "bank": 0, "last_daily": None}
+    )
     key = "bank" if bank else "wallet"
-    users[uid][key] += change
-    save_json("bank.json", users)
+    users[uid][key] = int(users[uid].get(key, 0)) + int(change)
+    save_bank(guild_id, users)
 
 def get_welcome_settings():
     return load_json("welcome.json", {})
@@ -2021,7 +2096,7 @@ async def jobwork(
     if failed:
         loss = min(
             reward,
-            get_bank().get(
+            get_bank(interaction.guild_id).get(
                 user_id,
                 {}
             ).get(
@@ -2032,6 +2107,7 @@ async def jobwork(
 
         if loss > 0:
             update_bank(
+                interaction.guild_id,
                 interaction.user.id,
                 -loss
             )
@@ -2065,6 +2141,7 @@ async def jobwork(
 
     else:
         update_bank(
+            interaction.guild_id,
             interaction.user.id,
             reward
         )
@@ -5456,7 +5533,7 @@ async def roleremove(
 # ------------------- ECONOMY -------------------
 @tree.command(name="balance", description="Check balance")
 async def balance(interaction: discord.Interaction):
-    users = get_bank()
+    users = get_bank(interaction.guild_id)
     u = users.get(str(interaction.user.id), {"wallet": 0, "bank": 0})
     await interaction.response.send_message(
         f"💰 Wallet: ${u['wallet']} | 🏦 Bank: ${u['bank']}"
@@ -5466,7 +5543,7 @@ async def balance(interaction: discord.Interaction):
 @app_commands.checks.cooldown(1, 600)
 async def work(interaction: discord.Interaction):
     earn = random.randint(10, 100)
-    update_bank(interaction.user.id, earn)
+    update_bank(interaction.guild_id, interaction.user.id, earn)
     await interaction.response.send_message(
         f"🛠 You earned ${earn}"
     )
@@ -5474,47 +5551,47 @@ async def work(interaction: discord.Interaction):
 @tree.command(name="daily", description="Claim daily reward")
 @app_commands.checks.cooldown(1, 86400)
 async def daily(interaction: discord.Interaction):
-    update_bank(interaction.user.id, DAILY_REWARD)
+    update_bank(interaction.guild_id, interaction.user.id, DAILY_REWARD)
     await interaction.response.send_message(f"🎁 You received ${DAILY_REWARD}")
 
 @tree.command(name="deposit")
 async def deposit(interaction: discord.Interaction, amount: int):
-    users = get_bank()
+    users = get_bank(interaction.guild_id)
     uid = str(interaction.user.id)
     if amount > users.get(uid, {}).get("wallet", 0):
         return await interaction.response.send_message("❌ Not enough money")
-    update_bank(interaction.user.id, -amount)
-    update_bank(interaction.user.id, amount, bank=True)
+    update_bank(interaction.guild_id, interaction.user.id, -amount)
+    update_bank(interaction.guild_id, interaction.user.id, amount, bank=True)
     await interaction.response.send_message(f"🏦 Deposited ${amount}")
 
 @tree.command(name="withdraw")
 async def withdraw(interaction: discord.Interaction, amount: int):
-    users = get_bank()
+    users = get_bank(interaction.guild_id)
     uid = str(interaction.user.id)
     if amount > users.get(uid, {}).get("bank", 0):
         return await interaction.response.send_message("❌ Not enough in bank")
-    update_bank(interaction.user.id, -amount, bank=True)
-    update_bank(interaction.user.id, amount)
+    update_bank(interaction.guild_id, interaction.user.id, -amount, bank=True)
+    update_bank(interaction.guild_id, interaction.user.id, amount)
     await interaction.response.send_message(f"💸 Withdrew ${amount}")
 
 @tree.command(name="slots")
 @app_commands.checks.cooldown(1, 30)
 async def slots(interaction: discord.Interaction, bet: int):
-    users = get_bank()
+    users = get_bank(interaction.guild_id)
     if bet > users.get(str(interaction.user.id), {}).get("wallet", 0):
         return await interaction.response.send_message("❌ Not enough money")
 
     emojis = ["🍒","🍋","🍊","🍇","💎"]
     result = [random.choice(emojis) for _ in range(3)]
-    update_bank(interaction.user.id, -bet)
+    update_bank(interaction.guild_id, interaction.user.id, -bet)
 
     if len(set(result)) == 1:
         win = bet * 5
-        update_bank(interaction.user.id, win)
+        update_bank(interaction.guild_id, interaction.user.id, win)
         msg = f"{''.join(result)} 🎉 Won ${win}"
     elif len(set(result)) == 2:
         win = bet * 2
-        update_bank(interaction.user.id, win)
+        update_bank(interaction.guild_id, interaction.user.id, win)
         msg = f"{''.join(result)} 👍 Won ${win}"
     else:
         msg = f"{''.join(result)} ❌ Lost ${bet}"
@@ -5565,7 +5642,7 @@ async def addmoney(
         )
         return
 
-    users = get_bank()
+    users = get_bank(interaction.guild_id)
     user_id = str(user.id)
 
     users.setdefault(
@@ -5583,8 +5660,8 @@ async def addmoney(
         + amount
     )
 
-    save_json(
-        "bank.json",
+    save_bank(
+        interaction.guild_id,
         users
     )
 
@@ -5628,7 +5705,7 @@ async def removemoney(
         )
         return
 
-    users = get_bank()
+    users = get_bank(interaction.guild_id)
     user_id = str(user.id)
 
     users.setdefault(
@@ -5656,8 +5733,8 @@ async def removemoney(
         current_balance - amount
     )
 
-    save_json(
-        "bank.json",
+    save_bank(
+        interaction.guild_id,
         users
     )
 
@@ -5686,7 +5763,7 @@ async def economywipe(
     interaction: discord.Interaction,
     user: discord.Member
 ):
-    users = get_bank()
+    users = get_bank(interaction.guild_id)
     user_id = str(user.id)
 
     users[user_id] = {
@@ -5695,8 +5772,8 @@ async def economywipe(
         "last_daily": None
     }
 
-    save_json(
-        "bank.json",
+    save_bank(
+        interaction.guild_id,
         users
     )
 
@@ -6017,7 +6094,7 @@ async def on_app_command_error(interaction: discord.Interaction, error):
 @tree.command(name="pay", description="Pay another member")
 @app_commands.describe(member="Member", amount="Amount")
 async def pay(interaction: discord.Interaction, member: discord.Member, amount: int):
-    users = get_bank()
+    users = get_bank(interaction.guild_id)
     payer = str(interaction.user.id)
 
     if amount <= 0:
@@ -6026,8 +6103,8 @@ async def pay(interaction: discord.Interaction, member: discord.Member, amount: 
     if amount > users.get(payer, {}).get("wallet", 0):
         return await interaction.response.send_message("❌ Not enough money")
 
-    update_bank(interaction.user.id, -amount)
-    update_bank(member.id, amount)
+    update_bank(interaction.guild_id, interaction.user.id, -amount)
+    update_bank(interaction.guild_id, member.id, amount)
 
     await interaction.response.send_message(
         f"💸 {interaction.user.mention} paid {member.mention} ${amount}"
@@ -6041,15 +6118,15 @@ async def rob(interaction: discord.Interaction, member: discord.Member):
     if member.bot:
         return await interaction.response.send_message("❌ You can't rob bots")
 
-    users = get_bank()
+    users = get_bank(interaction.guild_id)
     victim_wallet = users.get(str(member.id), {}).get("wallet", 0)
 
     if victim_wallet <= 0:
         return await interaction.response.send_message("❌ They have no money")
 
     robbed = random.randint(10, min(50, victim_wallet))
-    update_bank(member.id, -robbed)
-    update_bank(interaction.user.id, robbed)
+    update_bank(interaction.guild_id, member.id, -robbed)
+    update_bank(interaction.guild_id, interaction.user.id, robbed)
 
     await interaction.response.send_message(
         f"🦹 {interaction.user.mention} robbed {member.mention} for ${robbed}"
@@ -6058,7 +6135,7 @@ async def rob(interaction: discord.Interaction, member: discord.Member):
 # ------------------- LEADERBOARD -------------------
 @tree.command(name="leaderboard", description="Top balances")
 async def leaderboard(interaction: discord.Interaction):
-    users = get_bank()
+    users = get_bank(interaction.guild_id)
     sorted_users = sorted(
         users.items(),
         key=lambda x: x[1]["wallet"] + x[1]["bank"],
@@ -6076,10 +6153,11 @@ async def leaderboard(interaction: discord.Interaction):
 
 # ------------------- BLACKJACK -------------------
 class BlackjackView(discord.ui.View):
-    def __init__(self, user, bet):
+    def __init__(self, user, bet, guild_id):
         super().__init__(timeout=120)
         self.user = user
         self.bet = bet
+        self.guild_id = guild_id
         self.player = [random.randint(1, 11), random.randint(1, 11)]
         self.dealer = [random.randint(1, 11), random.randint(1, 11)]
 
@@ -6101,7 +6179,7 @@ class BlackjackView(discord.ui.View):
             return
         self.player.append(random.randint(1, 11))
         if self.value(self.player) > 21:
-            update_bank(self.user.id, -self.bet)
+            update_bank(self.guild_id, self.user.id, -self.bet)
             await interaction.response.edit_message(
                 content=f"💥 Bust! Lost ${self.bet}\nHand: {self.player}",
                 view=None
@@ -6120,12 +6198,12 @@ class BlackjackView(discord.ui.View):
         p, d = self.value(self.player), self.value(self.dealer)
 
         if d > 21 or p > d:
-            update_bank(self.user.id, self.bet * 2)
+            update_bank(self.guild_id, self.user.id, self.bet * 2)
             msg = f"🎉 You won ${self.bet}\nDealer: {self.dealer} ({d})"
         elif p == d:
             msg = f"🤝 Draw\nDealer: {self.dealer} ({d})"
         else:
-            update_bank(self.user.id, -self.bet)
+            update_bank(self.guild_id, self.user.id, -self.bet)
             msg = f"❌ You lost ${self.bet}\nDealer: {self.dealer} ({d})"
 
         await interaction.response.edit_message(content=msg, view=None)
@@ -6135,11 +6213,11 @@ class BlackjackView(discord.ui.View):
 @app_commands.checks.cooldown(1, 45)
 @app_commands.describe(bet="Bet")
 async def blackjack(interaction: discord.Interaction, bet: int):
-    users = get_bank()
+    users = get_bank(interaction.guild_id)
     if bet > users.get(str(interaction.user.id), {}).get("wallet", 0):
         return await interaction.response.send_message("❌ Not enough money")
 
-    view = BlackjackView(interaction.user, bet)
+    view = BlackjackView(interaction.user, bet, interaction.guild_id)
     await interaction.response.send_message(
         f"🃏 Your hand: {view.player} ({sum(view.player)})\nDealer shows: {view.dealer[0]}",
         view=view
@@ -6150,7 +6228,7 @@ async def blackjack(interaction: discord.Interaction, bet: int):
 @app_commands.checks.cooldown(1, 60)
 @app_commands.describe(amount="Bet", choice="Red / Black / Green / 0-36")
 async def roulette(interaction: discord.Interaction, amount: int, choice: str):
-    users = get_bank()
+    users = get_bank(interaction.guild_id)
     if amount > users.get(str(interaction.user.id), {}).get("wallet", 0):
         return await interaction.response.send_message("❌ Not enough money")
 
@@ -6158,15 +6236,15 @@ async def roulette(interaction: discord.Interaction, amount: int, choice: str):
     colors[0] = "green"
     winning = random.randint(0, 36)
 
-    update_bank(interaction.user.id, -amount)
+    update_bank(interaction.guild_id, interaction.user.id, -amount)
 
     if choice.lower() in colors.values() and colors[winning] == choice.lower():
         win = amount * 2
-        update_bank(interaction.user.id, win)
+        update_bank(interaction.guild_id, interaction.user.id, win)
         msg = f"🎡 {winning} ({colors[winning]}) — Won ${win}"
     elif choice.isdigit() and int(choice) == winning:
         win = amount * 36
-        update_bank(interaction.user.id, win)
+        update_bank(interaction.guild_id, interaction.user.id, win)
         msg = f"🎯 Exact hit! Won ${win}"
     else:
         msg = f"🎡 {winning} ({colors[winning]}) — Lost ${amount}"
@@ -6310,7 +6388,7 @@ async def money(interaction: discord.Interaction, member: discord.Member, action
     if not interaction.user.guild_permissions.administrator:
         return await interaction.response.send_message("❌ Admin only", ephemeral=True)
     
-    users = get_bank()
+    users = get_bank(interaction.guild_id)
     user_id = str(member.id)
     if user_id not in users:
         users[user_id] = {"wallet": 0, "bank": 0, "last_daily": None}
@@ -6318,31 +6396,33 @@ async def money(interaction: discord.Interaction, member: discord.Member, action
     action = action.lower()
     if action == "add":
         users[user_id]["wallet"] += amount
-        update_bank(member.id, 0)  # Save changes to file
+        update_bank(interaction.guild_id, member.id, 0)  # Save changes to file
         await interaction.response.send_message(f"✅ Added ${amount} to {member.mention}'s wallet.")
     elif action == "remove":
         users[user_id]["wallet"] -= amount
         if users[user_id]["wallet"] < 0:
             users[user_id]["wallet"] = 0
-        update_bank(member.id, 0)  # Save changes to file
+        update_bank(interaction.guild_id, member.id, 0)  # Save changes to file
         await interaction.response.send_message(f"✅ Removed ${amount} from {member.mention}'s wallet.")
     elif action == "reset":
         users[user_id]["wallet"] = 0
         users[user_id]["bank"] = 0
-        update_bank(member.id, 0)  # Save changes to file
+        update_bank(interaction.guild_id, member.id, 0)  # Save changes to file
         await interaction.response.send_message(f"✅ Reset {member.mention}'s wallet and bank to $0.")
     else:
         await interaction.response.send_message("❌ Invalid action! Use `add`, `remove`, or `reset`.", ephemeral=True)
     
-    # Save all changes back to JSON
-    with open("bank.json", "w") as f:
-        json.dump(users, f)
+    # Save only this Discord server's balances.
+    save_bank(
+        interaction.guild_id,
+        users
+    )
 
 # ------------------- VIEW OTHER USER BALANCE -------------------
 @tree.command(name="balanceof", description="View another member's wallet and bank balance")
 @app_commands.describe(member="The member to check")
 async def balanceof(interaction: discord.Interaction, member: discord.Member):
-    users = get_bank()
+    users = get_bank(interaction.guild_id)
     data = users.get(str(member.id), {"wallet": 0, "bank": 0})
 
     await interaction.response.send_message(
@@ -6776,26 +6856,26 @@ def _economy_account(users, discord_id):
     return users[uid]
 
 
-def _deadside_add_wallet(discord_id, amount):
+def _deadside_add_wallet(guild_id, discord_id, amount):
     amount = max(0, int(amount))
     if amount <= 0:
         return 0
-    users = get_bank()
+    users = get_bank(guild_id)
     account = _economy_account(users, discord_id)
     account["wallet"] = int(account.get("wallet", 0)) + amount
-    save_json("bank.json", users)
+    save_bank(guild_id, users)
     return amount
 
 
-def _deadside_take_wallet(discord_id, amount):
+def _deadside_take_wallet(guild_id, discord_id, amount):
     amount = max(0, int(amount))
-    users = get_bank()
+    users = get_bank(guild_id)
     account = _economy_account(users, discord_id)
     wallet = int(account.get("wallet", 0))
     if amount > wallet:
         return False
     account["wallet"] = wallet - amount
-    save_json("bank.json", users)
+    save_bank(guild_id, users)
     return True
 
 
@@ -6849,6 +6929,7 @@ def _deadside_active_bounties(guild_id):
             bounty["status"] = "expired"
             if bounty.get("refund_on_expiry", True):
                 _deadside_add_wallet(
+                    guild_id,
                     bounty.get("creator_id"),
                     int(bounty.get("amount", 0))
                 )
@@ -6946,7 +7027,7 @@ async def _process_deadside_rewards(guild_id, config, event, stats_root):
                 reward = min(reward, max(0, session_limit - already))
 
             if reward > 0:
-                reward_paid = _deadside_add_wallet(killer_id, reward)
+                reward_paid = _deadside_add_wallet(guild_id, killer_id, reward)
                 session["earned"] = already + reward_paid
 
         _write_config(DEADSIDE_SESSIONS_FILE, session_root)
@@ -6963,7 +7044,7 @@ async def _process_deadside_rewards(guild_id, config, event, stats_root):
     if killer_id and claimed:
         total_bounty = sum(int(item.get("amount", 0)) for item in claimed)
         if total_bounty > 0:
-            _deadside_add_wallet(killer_id, total_bounty)
+            _deadside_add_wallet(guild_id, killer_id, total_bounty)
             for bounty in claimed:
                 bounty["status"] = "claimed"
                 bounty["claimed_by"] = str(killer_id)
@@ -7449,7 +7530,7 @@ async def _send_ds_stats(interaction, member=None):
     weapons = data.get("weapons", {})
     favorite = max(weapons, key=weapons.get) if weapons else "None"
 
-    users = get_bank()
+    users = get_bank(interaction.guild_id)
     economy = _economy_account(users, member.id)
 
     embed = discord.Embed(
@@ -7584,7 +7665,7 @@ async def ds_bounty_create(
             ephemeral=True
         )
 
-    if not _deadside_take_wallet(interaction.user.id, amount):
+    if not _deadside_take_wallet(interaction.guild_id, interaction.user.id, amount):
         return await interaction.response.send_message(
             "❌ You do not have enough money in your existing wallet.",
             ephemeral=True
@@ -7735,13 +7816,13 @@ def _dz_link(guild_id, discord_id=None, guid=None, gamertag=None):
         if gamertag and str(r.get("gamertag","")).casefold()==str(gamertag).casefold(): return uid,r
     return None,None
 
-def _dz_add_money(uid, amount):
-    users=get_bank(); uid=str(uid); users.setdefault(uid,{"wallet":0,"bank":0,"last_daily":None}); users[uid]["wallet"]=int(users[uid].get("wallet",0))+max(0,int(amount)); save_json("bank.json",users)
+def _dz_add_money(guild_id, uid, amount):
+    users=get_bank(guild_id); uid=str(uid); users.setdefault(uid,{"wallet":0,"bank":0,"last_daily":None}); users[uid]["wallet"]=int(users[uid].get("wallet",0))+max(0,int(amount)); save_bank(guild_id,users)
 
-def _dz_take_money(uid, amount):
-    users=get_bank(); uid=str(uid); users.setdefault(uid,{"wallet":0,"bank":0,"last_daily":None}); amount=max(0,int(amount))
+def _dz_take_money(guild_id, uid, amount):
+    users=get_bank(guild_id); uid=str(uid); users.setdefault(uid,{"wallet":0,"bank":0,"last_daily":None}); amount=max(0,int(amount))
     if int(users[uid].get("wallet",0))<amount: return False
-    users[uid]["wallet"]-=amount; save_json("bank.json",users); return True
+    users[uid]["wallet"]-=amount; save_bank(guild_id,users); return True
 
 def _dz_update_stats(root,gid,event):
     server=root["servers"].setdefault(str(gid),{"players":{},"positions":{}}); players=server.setdefault("players",{})
@@ -7767,10 +7848,10 @@ async def _dz_post(config,event):
 async def _dz_economy(gid,config,event):
     if event.get("type")!="kill": return
     killer_id,_=_dz_link(gid,guid=event.get("killer_guid"),gamertag=event.get("killer"))
-    if killer_id and config.get("pay_per_kill_enabled",False): _dz_add_money(killer_id,int(config.get("pay_per_kill",0) or 0))
+    if killer_id and config.get("pay_per_kill_enabled",False): _dz_add_money(guild_id,killer_id,int(config.get("pay_per_kill",0) or 0))
     root=_dz_bounties(); guild=root["guilds"].setdefault(str(gid),{"items":[]}); target=str(event.get("victim","")).casefold(); claimed=[b for b in guild.setdefault("items",[]) if b.get("status")=="active" and str(b.get("target_gamertag","")).casefold()==target]
     if killer_id and claimed:
-        total=sum(int(b.get("amount",0)) for b in claimed); _dz_add_money(killer_id,total)
+        total=sum(int(b.get("amount",0)) for b in claimed); _dz_add_money(guild_id,killer_id,total)
         for b in claimed: b.update(status="claimed",claimed_by=str(killer_id),claimed_at=time.time())
         _write_config(DAYZ_BOUNTIES_FILE,root)
 
@@ -7848,7 +7929,7 @@ async def dz_playerlocations(interaction:discord.Interaction):
 async def dz_bounty(interaction:discord.Interaction,gamertag:str,amount:int):
     cfg=_dz_config(interaction.guild_id); lo=max(1,int(cfg.get("minimum_bounty",100) or 100)); hi=max(lo,int(cfg.get("maximum_bounty",10000) or 10000))
     if not lo<=amount<=hi: return await interaction.response.send_message(f"❌ Bounty must be between ${lo:,} and ${hi:,}.",ephemeral=True)
-    if not _dz_take_money(interaction.user.id,amount): return await interaction.response.send_message("❌ Not enough money in your shared wallet.",ephemeral=True)
+    if not _dz_take_money(interaction.guild_id,interaction.user.id,amount): return await interaction.response.send_message("❌ Not enough money in your shared wallet.",ephemeral=True)
     root=_dz_bounties(); guild=root["guilds"].setdefault(str(interaction.guild_id),{"items":[]}); guild.setdefault("items",[]).append({"id":secrets.token_urlsafe(8),"creator_id":str(interaction.user.id),"target_gamertag":gamertag.strip(),"amount":int(amount),"status":"active","created_at":time.time()}); _write_config(DAYZ_BOUNTIES_FILE,root); await interaction.response.send_message(f"🎯 **${amount:,}** bounty placed on **{discord.utils.escape_markdown(gamertag)}**.")
 
 @dz_group.command(name="bounties",description="List active DayZ bounties")
