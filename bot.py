@@ -3229,7 +3229,6 @@ async def create_dashboard_ticket(
         )
 
     # Ticket channels are always named from the member who opened them.
-    # Dashboard channel_prefix is intentionally ignored.
     username = clean_ticket_channel_name(
         getattr(user, "name", None)
         or getattr(user, "display_name", None)
@@ -3240,7 +3239,6 @@ async def create_dashboard_ticket(
         f"{username}-ticket"
     )
 
-    # If the same channel name already exists, add a short unique suffix.
     if discord.utils.get(guild.text_channels, name=channel_name):
         channel_name = clean_ticket_channel_name(
             f"{username}-ticket-{str(user.id)[-4:]}"
@@ -5643,6 +5641,140 @@ def _deadside_profile_stats(guild_id, gamertag):
         if str(name).casefold() == wanted:
             return name, data
     return gamertag, {}
+
+
+
+
+
+# =========================================================
+# QR CODE + PNG URL COMMANDS
+# =========================================================
+
+@tree.command(
+    name="qrcode",
+    description="Turn a website link into a QR code PNG"
+)
+@app_commands.describe(
+    link="The http:// or https:// link to encode into the QR code"
+)
+async def qrcode_command(
+    interaction: discord.Interaction,
+    link: str
+):
+    link = str(link or "").strip()
+
+    if not (
+        link.lower().startswith("https://")
+        or link.lower().startswith("http://")
+    ):
+        await interaction.response.send_message(
+            "❌ Please provide a valid `http://` or `https://` link.",
+            ephemeral=True
+        )
+        return
+
+    if len(link) > 2000:
+        await interaction.response.send_message(
+            "❌ That link is too long.",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.defer(thinking=True)
+
+    try:
+        import qrcode
+    except ImportError:
+        await interaction.followup.send(
+            "❌ QR code support is not installed on the bot service. "
+            "Add `qrcode[pil]>=7.4,<9` to `requirements.txt` and redeploy.",
+            ephemeral=True
+        )
+        return
+
+    try:
+        image = qrcode.make(link)
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        buffer.seek(0)
+
+        file = discord.File(
+            buffer,
+            filename="pirates_qr_code.png"
+        )
+
+        embed = discord.Embed(
+            title="🔳 QR Code",
+            description=(
+                "Scan the QR code below to open:\n"
+                f"{discord.utils.escape_markdown(link)}"
+            ),
+            colour=discord.Colour.dark_red()
+        )
+        embed.set_image(
+            url="attachment://pirates_qr_code.png"
+        )
+        embed.set_footer(
+            text="Pirates Bot • QR Generator"
+        )
+
+        await interaction.followup.send(
+            embed=embed,
+            file=file,
+            allowed_mentions=discord.AllowedMentions.none()
+        )
+
+    except Exception as error:
+        print(f"QR code command error: {error}")
+        await interaction.followup.send(
+            "❌ I couldn't generate that QR code. Please try another link.",
+            ephemeral=True
+        )
+
+
+@tree.command(
+    name="pngurl",
+    description="Upload a PNG and get its Discord image URL"
+)
+@app_commands.describe(
+    image="Upload the PNG image you want a URL for"
+)
+async def pngurl_command(
+    interaction: discord.Interaction,
+    image: discord.Attachment
+):
+    filename = str(image.filename or "").lower()
+    content_type = str(image.content_type or "").lower()
+
+    if not (
+        filename.endswith(".png")
+        or content_type == "image/png"
+    ):
+        await interaction.response.send_message(
+            "❌ Please upload a **PNG** file.",
+            ephemeral=True
+        )
+        return
+
+    image_url = str(image.url)
+
+    embed = discord.Embed(
+        title="🖼️ PNG URL",
+        description=(
+            "Your image URL is ready.\n\n"
+            f"`{image_url}`"
+        ),
+        colour=discord.Colour.dark_red()
+    )
+    embed.set_image(url=image_url)
+    embed.set_footer(
+        text="Pirates Bot • Image URL"
+    )
+
+    await interaction.response.send_message(
+        embed=embed,
+        allowed_mentions=discord.AllowedMentions.none()
+    )
 
 
 
