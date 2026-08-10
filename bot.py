@@ -542,6 +542,59 @@ def dashboard_apply_feature(feature):
         return jsonify({"error": str(error)}), 500
 
 
+@app.route("/api/logs/<int:guild_id>", methods=["GET"])
+def api_logs(guild_id):
+    if not dashboard_authorized():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+
+    guild = bot.get_guild(guild_id)
+    if guild is None:
+        return jsonify({"ok": False, "error": "Guild not found"}), 404
+
+    logs_data = load_json(LOGS_FILE, {"guilds": {}})
+    if not isinstance(logs_data, dict):
+        logs_data = {"guilds": {}}
+
+    entries = logs_data.get("guilds", {}).get(str(guild_id), [])
+    if not isinstance(entries, list):
+        entries = []
+
+    entries = sorted(
+        entries,
+        key=lambda item: float(item.get("timestamp", 0) or 0),
+        reverse=True
+    )
+
+    return jsonify({
+        "ok": True,
+        "guild_id": str(guild_id),
+        "logs": entries
+    })
+
+
+@app.route("/api/logs/<int:guild_id>/clear", methods=["POST"])
+def api_clear_logs(guild_id):
+    if not dashboard_authorized():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+
+    guild = bot.get_guild(guild_id)
+    if guild is None:
+        return jsonify({"ok": False, "error": "Guild not found"}), 404
+
+    logs_data = load_json(LOGS_FILE, {"guilds": {}})
+    if not isinstance(logs_data, dict):
+        logs_data = {"guilds": {}}
+
+    logs_data.setdefault("guilds", {})[str(guild_id)] = []
+    save_json(LOGS_FILE, logs_data)
+
+    return jsonify({
+        "ok": True,
+        "guild_id": str(guild_id),
+        "message": "Logs cleared"
+    })
+
+
 def run_web():
     port = int(
         os.getenv(
@@ -1319,6 +1372,91 @@ async def on_member_update(
                 "after": after.display_name
             }
         )
+
+# =========================================================
+# EXTRA SERVER AUDIT LOG EVENTS
+# =========================================================
+
+@bot.event
+async def on_guild_channel_create(channel):
+    save_guild_log(
+        channel.guild.id,
+        "channel_create",
+        {
+            "channel_id": str(channel.id),
+            "channel_name": channel.name,
+            "channel_type": str(channel.type)
+        }
+    )
+
+
+@bot.event
+async def on_guild_channel_delete(channel):
+    save_guild_log(
+        channel.guild.id,
+        "channel_delete",
+        {
+            "channel_id": str(channel.id),
+            "channel_name": channel.name,
+            "channel_type": str(channel.type)
+        }
+    )
+
+
+@bot.event
+async def on_guild_role_create(role):
+    save_guild_log(
+        role.guild.id,
+        "role_create",
+        {
+            "role_id": str(role.id),
+            "role_name": role.name
+        }
+    )
+
+
+@bot.event
+async def on_guild_role_delete(role):
+    save_guild_log(
+        role.guild.id,
+        "role_delete",
+        {
+            "role_id": str(role.id),
+            "role_name": role.name
+        }
+    )
+
+
+@bot.event
+async def on_voice_state_update(member, before, after):
+    before_id = str(before.channel.id) if before.channel else ""
+    after_id = str(after.channel.id) if after.channel else ""
+
+    if before_id == after_id:
+        return
+
+    if before.channel is None and after.channel is not None:
+        log_type = "voice_join"
+    elif before.channel is not None and after.channel is None:
+        log_type = "voice_leave"
+    else:
+        log_type = "voice_move"
+
+    save_guild_log(
+        member.guild.id,
+        log_type,
+        {
+            "user_id": str(member.id),
+            "user_name": str(member),
+            "display_name": member.display_name,
+            "before_channel_id": before_id,
+            "before_channel_name": before.channel.name if before.channel else "",
+            "after_channel_id": after_id,
+            "after_channel_name": after.channel.name if after.channel else ""
+        }
+    )
+
+
 # =========================================================
 # PIRATE JOB SYSTEM
 # =========================================================
@@ -4813,6 +4951,20 @@ async def removeautorole(interaction: discord.Interaction):
 # ------------------- EVENT: APPLY AUTO ROLE -------------------
 @bot.event
 async def on_member_join(member):
+    # Dashboard audit log: keep this in the final active on_member_join handler.
+    save_guild_log(
+        member.guild.id,
+        "member_join",
+        {
+            "user_id": str(member.id),
+            "user_name": str(member),
+            "display_name": member.display_name,
+            "joined_at": member.joined_at.isoformat() if member.joined_at else None,
+            "created_at": member.created_at.isoformat(),
+            "bot": member.bot
+        }
+    )
+
     # Existing welcome system
     all_welcome = get_welcome_settings()
     welcome_data = all_welcome.get(str(member.guild.id)) if str(member.guild.id) in all_welcome else all_welcome
@@ -7165,6 +7317,344 @@ tree.add_command(help_group)
 
 
     # ------------------- READY -------------------
+
+# =========================================================
+# ADMIN MEMBER MODERATION SLASH COMMANDS
+# =========================================================
+
+async def _pirates_send_mod_reply(
+    interaction: discord.Interaction,
+    message: str
+):
+    """Reply safely even if another handler has already deferred."""
+    if interaction.response.is_done():
+        await interaction.followup.send(message, ephemeral=True)
+    else:
+        await interaction.response.send_message(message, ephemeral=True)
+
+
+def _pirates_can_moderate_member(
+    interaction: discord.Interaction,
+    member: discord.Member
+):
+    if interaction.guild is None:
+        return False, "❌ This command can only be used inside a Discord server."
+
+    if member.id == interaction.user.id:
+        return False, "❌ You cannot use this moderation command on yourself."
+
+    if member.id == interaction.guild.owner_id:
+        return False, "❌ The server owner cannot be moderated."
+
+    bot_member = interaction.guild.me
+    if bot_member is None:
+        return False, "❌ I could not determine my server permissions."
+
+    if member.top_role >= bot_member.top_role:
+        return (
+            False,
+            "❌ I cannot moderate that member. Move the Pirates Bot role above "
+            "their highest role."
+        )
+
+    # Administrators cannot moderate peers/superiors unless they own the guild.
+    actor = interaction.user
+    if (
+        isinstance(actor, discord.Member)
+        and actor.id != interaction.guild.owner_id
+        and member.top_role >= actor.top_role
+    ):
+        return False, "❌ You cannot moderate a member with an equal or higher role."
+
+    return True, ""
+
+
+@bot.tree.command(
+    name="ban-member",
+    description="Ban a member from the Discord server."
+)
+@app_commands.describe(
+    member="Member to ban",
+    reason="Reason for the ban"
+)
+@app_commands.checks.has_permissions(ban_members=True)
+@app_commands.guild_only()
+async def ban_member_command(
+    interaction: discord.Interaction,
+    member: discord.Member,
+    reason: str = "No reason provided"
+):
+    allowed, error = _pirates_can_moderate_member(interaction, member)
+    if not allowed:
+        await _pirates_send_mod_reply(interaction, error)
+        return
+
+    reason = str(reason).strip()[:450] or "No reason provided"
+
+    try:
+        await member.ban(
+            reason=f"{reason} | Moderator: {interaction.user}"
+        )
+        save_guild_log(
+            interaction.guild.id,
+            "member_ban",
+            {
+                "user_id": str(member.id),
+                "user_name": str(member),
+                "display_name": member.display_name,
+                "moderator_id": str(interaction.user.id),
+                "moderator_name": str(interaction.user),
+                "reason": reason
+            }
+        )
+        await _pirates_send_mod_reply(
+            interaction,
+            f"🔨 **{member}** has been banned.\n**Reason:** {reason}"
+        )
+    except discord.Forbidden:
+        await _pirates_send_mod_reply(
+            interaction,
+            "❌ I do not have permission to ban that member. Check my role position."
+        )
+    except discord.HTTPException as error:
+        await _pirates_send_mod_reply(
+            interaction,
+            f"❌ Discord could not ban that member: {error}"
+        )
+
+
+@bot.tree.command(
+    name="remove-member",
+    description="Remove (kick) a member from the Discord server."
+)
+@app_commands.describe(
+    member="Member to remove",
+    reason="Reason for removing the member"
+)
+@app_commands.checks.has_permissions(kick_members=True)
+@app_commands.guild_only()
+async def remove_member_command(
+    interaction: discord.Interaction,
+    member: discord.Member,
+    reason: str = "No reason provided"
+):
+    allowed, error = _pirates_can_moderate_member(interaction, member)
+    if not allowed:
+        await _pirates_send_mod_reply(interaction, error)
+        return
+
+    reason = str(reason).strip()[:450] or "No reason provided"
+
+    try:
+        member_data = {
+            "user_id": str(member.id),
+            "user_name": str(member),
+            "display_name": member.display_name,
+            "moderator_id": str(interaction.user.id),
+            "moderator_name": str(interaction.user),
+            "reason": reason
+        }
+        await member.kick(
+            reason=f"{reason} | Moderator: {interaction.user}"
+        )
+        save_guild_log(
+            interaction.guild.id,
+            "member_kick",
+            member_data
+        )
+        await _pirates_send_mod_reply(
+            interaction,
+            f"👢 **{member}** has been removed from the server.\n**Reason:** {reason}"
+        )
+    except discord.Forbidden:
+        await _pirates_send_mod_reply(
+            interaction,
+            "❌ I do not have permission to remove that member. Check my role position."
+        )
+    except discord.HTTPException as error:
+        await _pirates_send_mod_reply(
+            interaction,
+            f"❌ Discord could not remove that member: {error}"
+        )
+
+
+@bot.tree.command(
+    name="timeout-member",
+    description="Temporarily timeout a member."
+)
+@app_commands.describe(
+    member="Member to timeout",
+    minutes="Timeout length in minutes",
+    reason="Reason for the timeout"
+)
+@app_commands.checks.has_permissions(moderate_members=True)
+@app_commands.guild_only()
+async def timeout_member_command(
+    interaction: discord.Interaction,
+    member: discord.Member,
+    minutes: app_commands.Range[int, 1, 40320],
+    reason: str = "No reason provided"
+):
+    allowed, error = _pirates_can_moderate_member(interaction, member)
+    if not allowed:
+        await _pirates_send_mod_reply(interaction, error)
+        return
+
+    reason = str(reason).strip()[:450] or "No reason provided"
+    until = discord.utils.utcnow() + timedelta(minutes=int(minutes))
+
+    try:
+        await member.timeout(
+            until,
+            reason=f"{reason} | Moderator: {interaction.user}"
+        )
+        save_guild_log(
+            interaction.guild.id,
+            "member_timeout",
+            {
+                "user_id": str(member.id),
+                "user_name": str(member),
+                "display_name": member.display_name,
+                "moderator_id": str(interaction.user.id),
+                "moderator_name": str(interaction.user),
+                "minutes": int(minutes),
+                "until": until.isoformat(),
+                "reason": reason
+            }
+        )
+        await _pirates_send_mod_reply(
+            interaction,
+            f"⏳ **{member}** has been timed out for **{minutes} minute(s)**."
+            f"\n**Reason:** {reason}"
+        )
+    except discord.Forbidden:
+        await _pirates_send_mod_reply(
+            interaction,
+            "❌ I do not have permission to timeout that member. Check my role position."
+        )
+    except discord.HTTPException as error:
+        await _pirates_send_mod_reply(
+            interaction,
+            f"❌ Discord could not timeout that member: {error}"
+        )
+
+
+@bot.tree.command(
+    name="warn-member",
+    description="Warn a member and record the warning in Pirates Bot logs."
+)
+@app_commands.describe(
+    member="Member to warn",
+    reason="Reason for the warning"
+)
+@app_commands.checks.has_permissions(moderate_members=True)
+@app_commands.guild_only()
+async def warn_member_command(
+    interaction: discord.Interaction,
+    member: discord.Member,
+    reason: str
+):
+    allowed, error = _pirates_can_moderate_member(interaction, member)
+    if not allowed:
+        await _pirates_send_mod_reply(interaction, error)
+        return
+
+    reason = str(reason).strip()[:450]
+    if not reason:
+        await _pirates_send_mod_reply(
+            interaction,
+            "❌ Enter a reason for the warning."
+        )
+        return
+
+    save_guild_log(
+        interaction.guild.id,
+        "member_warn",
+        {
+            "user_id": str(member.id),
+            "user_name": str(member),
+            "display_name": member.display_name,
+            "moderator_id": str(interaction.user.id),
+            "moderator_name": str(interaction.user),
+            "reason": reason
+        }
+    )
+
+    dm_status = ""
+    try:
+        await member.send(
+            f"⚠️ You have been warned in **{interaction.guild.name}**."
+            f"\n**Reason:** {reason}"
+        )
+        dm_status = "\n📨 The member was also notified by DM."
+    except (discord.Forbidden, discord.HTTPException):
+        dm_status = "\nℹ️ I could not DM the member, but the warning was recorded."
+
+    await _pirates_send_mod_reply(
+        interaction,
+        f"⚠️ **{member}** has been warned."
+        f"\n**Reason:** {reason}"
+        f"{dm_status}"
+    )
+
+
+@ban_member_command.error
+async def ban_member_command_error(
+    interaction: discord.Interaction,
+    error: app_commands.AppCommandError
+):
+    if isinstance(error, app_commands.MissingPermissions):
+        await _pirates_send_mod_reply(
+            interaction,
+            "❌ You need the **Ban Members** permission to use this command."
+        )
+        return
+    await _pirates_send_mod_reply(interaction, f"❌ Command failed: {error}")
+
+
+@remove_member_command.error
+async def remove_member_command_error(
+    interaction: discord.Interaction,
+    error: app_commands.AppCommandError
+):
+    if isinstance(error, app_commands.MissingPermissions):
+        await _pirates_send_mod_reply(
+            interaction,
+            "❌ You need the **Kick Members** permission to use this command."
+        )
+        return
+    await _pirates_send_mod_reply(interaction, f"❌ Command failed: {error}")
+
+
+@timeout_member_command.error
+async def timeout_member_command_error(
+    interaction: discord.Interaction,
+    error: app_commands.AppCommandError
+):
+    if isinstance(error, app_commands.MissingPermissions):
+        await _pirates_send_mod_reply(
+            interaction,
+            "❌ You need the **Moderate Members** permission to use this command."
+        )
+        return
+    await _pirates_send_mod_reply(interaction, f"❌ Command failed: {error}")
+
+
+@warn_member_command.error
+async def warn_member_command_error(
+    interaction: discord.Interaction,
+    error: app_commands.AppCommandError
+):
+    if isinstance(error, app_commands.MissingPermissions):
+        await _pirates_send_mod_reply(
+            interaction,
+            "❌ You need the **Moderate Members** permission to use this command."
+        )
+        return
+    await _pirates_send_mod_reply(interaction, f"❌ Command failed: {error}")
+
+
+
 @bot.event
 async def on_ready():
     if not getattr(
