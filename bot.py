@@ -666,10 +666,16 @@ OPENXBL_BASE_URL = os.getenv(
     "https://xbl.io/api/v2"
 ).rstrip("/")
 
+if OPENXBL_BASE_URL.rstrip("/").lower() in {
+    "https://api.xbl.io/api/v2",
+    "https://api.xbl.io/v2"
+}:
+    OPENXBL_BASE_URL = "https://xbl.io/api/v2"
+
 # OpenXBL's api.xbl.io gateway serves /v2/... directly. Older Pirates Bot
 # builds used /api/v2, which now returns HTTP 404. Repair an old Railway
 # override automatically so the integration keeps working after deployment.
-if OPENXBL_BASE_URL.rstrip("/").lower() == "https://api.xbl.io/api/v2":
+if OPENXBL_BASE_URL.rstrip("/").lower() == "https://xbl.io/api/v2":
     OPENXBL_BASE_URL = "https://xbl.io/api/v2"
 
 TRANSCRIPTS_FOLDER = os.path.join(BASE_DIR, "ticket_transcripts")
@@ -2733,12 +2739,14 @@ def _xbox_lookup_profile(gamertag):
 
     errors = []
 
-    # OpenXBL's getting-started guide documents friends/search for
-    # looking up another gamertag and returning its XUID. Try it first,
-    # then fall back to the direct gamertag route.
+    # OpenXBL's current OpenAPI spec defines gamertag lookup as:
+    #   GET /api/v2/search/{gamertag}
+    # and friend-list search as:
+    #   GET /api/v2/friends/search/{gamertag}
+    # Both use the gamertag as a PATH parameter, not ?gt=.
     for path, params in (
-        ("friends/search", {"gt": gamertag}),
-        (f"player/gamertag/{encoded}", None),
+        (f"search/{encoded}", None),
+        (f"friends/search/{encoded}", None),
     ):
         try:
             payload = _xbox_api_request(
