@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Integrations | Pirates Bot{% endblock %}
+{% block page_title %}🎮 Game Integrations{% endblock %}
+{% block description %}Connect game servers and send live feeds, leaderboards and status updates to Discord.{% endblock %}
+{% block content %}
+<div class="integration-grid">
+  <a class="integration-card available" href="{{ url_for('deadside_overview') }}">
+    <div class="integration-icon">☠️</div>
+    <div><h2>Deadside</h2><p>Killfeed, statistics and leaderboards.</p><span>Configure integration →</span></div>
+  </a>
+  <article class="integration-card coming"><div class="integration-icon">🦌</div><div><h2>DayZ</h2><p>Coming soon.</p></div></article>
+  <article class="integration-card coming"><div class="integration-icon">⚙️</div><div><h2>Rust</h2><p>Coming soon.</p></div></article>
+</div>
+{% endblock %}
