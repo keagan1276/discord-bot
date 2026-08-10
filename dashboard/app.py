@@ -1043,115 +1043,389 @@ def commands_page():
     
 @app.route("/economy", methods=["GET", "POST"])
 def economy():
+    guild_id = str(session.get("selected_guild_id", "")).strip()
+    economy_path = guild_feature_path(ECONOMY_FILE, guild_id)
 
-    with open(guild_feature_path(ECONOMY_FILE), "r", encoding="utf-8") as file:
-        economy = json.load(file)
+    default_economy = {
+        "guild_id": guild_id,
+        "work": {
+            "min_reward": 10,
+            "max_reward": 100,
+            "cooldown": 600
+        },
+        "crime": {
+            "success_chance": 50,
+            "min_reward": 50,
+            "max_reward": 250,
+            "fail_loss": 50,
+            "cooldown": 900
+        },
+        "rob": {
+            "success_chance": 40,
+            "min_reward": 10,
+            "max_reward": 100,
+            "fail_loss": 50,
+            "cooldown": 900
+        },
+        "blackjack": {
+            "min_bet": 10,
+            "max_bet": 1000,
+            "cooldown": 45
+        },
+        "roulette": {
+            "min_bet": 10,
+            "max_bet": 1000,
+            "cooldown": 60
+        },
+        "daily": {
+            "reward": 500,
+            "cooldown": 86400
+        },
+        "weekly": {
+            "reward": 2500,
+            "cooldown": 604800
+        },
+        "bank": {
+            "max_storage": 1000000,
+            "interest_rate": 0,
+            "interest_cooldown": 86400
+        }
+    }
 
-    # ---------- Defaults ----------
-    economy.setdefault("work", {
-        "min_reward": 10,
-        "max_reward": 100,
-        "cooldown": 600
-    })
+    economy = load_or_create_json(
+        economy_path,
+        default_economy
+    )
 
-    economy.setdefault("crime", {
-        "success_chance": 50,
-        "min_reward": 50,
-        "max_reward": 250,
-        "fail_loss": 50,
-        "cooldown": 900
-    })
+    # Repair partial/older economy files.
+    for section, defaults in default_economy.items():
+        if section == "guild_id":
+            continue
+        if not isinstance(economy.get(section), dict):
+            economy[section] = {}
+        for key, value in defaults.items():
+            economy[section].setdefault(key, value)
 
-    economy.setdefault("rob", {
-        "success_chance": 40,
-        "min_reward": 10,
-        "max_reward": 100,
-        "fail_loss": 50,
-        "cooldown": 900
-    })
+    economy["guild_id"] = guild_id
 
-    economy.setdefault("blackjack", {
-        "min_bet": 10,
-        "max_bet": 1000,
-        "cooldown": 45
-    })
-
-    economy.setdefault("roulette", {
-        "min_bet": 10,
-        "max_bet": 1000,
-        "cooldown": 60
-    })
-
-    economy.setdefault("daily", {
-        "reward": 500,
-        "cooldown": 86400
-    })
-
-    economy.setdefault("weekly", {
-        "reward": 2500,
-        "cooldown": 604800
-    })
-
-    economy.setdefault("bank", {
-        "max_storage": 1000000,
-        "interest_rate": 0,
-        "interest_cooldown": 86400
-    })
+    def form_int(name, current, minimum=0):
+        raw = request.form.get(name)
+        if raw is None or str(raw).strip() == "":
+            return int(current)
+        try:
+            return max(minimum, int(float(raw)))
+        except (TypeError, ValueError):
+            return int(current)
 
     if request.method == "POST":
-        # Leave your existing save code here for now.
-        with open(guild_feature_path(ECONOMY_FILE), "w", encoding="utf-8") as file:
-            json.dump(economy, file, indent=4)
+        economy["work"]["min_reward"] = form_int(
+            "work_min",
+            economy["work"]["min_reward"]
+        )
+        economy["work"]["max_reward"] = form_int(
+            "work_max",
+            economy["work"]["max_reward"]
+        )
+        economy["work"]["cooldown"] = form_int(
+            "work_cooldown",
+            economy["work"]["cooldown"]
+        )
 
-        apply_result = save_and_apply_feature("economy", economy)
+        economy["crime"]["success_chance"] = min(
+            100,
+            form_int(
+                "crime_chance",
+                economy["crime"]["success_chance"]
+            )
+        )
+        economy["crime"]["min_reward"] = form_int(
+            "crime_min",
+            economy["crime"]["min_reward"]
+        )
+        economy["crime"]["max_reward"] = form_int(
+            "crime_max",
+            economy["crime"]["max_reward"]
+        )
+        economy["crime"]["fail_loss"] = form_int(
+            "crime_loss",
+            economy["crime"]["fail_loss"]
+        )
+        economy["crime"]["cooldown"] = form_int(
+            "crime_cooldown",
+            economy["crime"]["cooldown"]
+        )
+
+        economy["rob"]["success_chance"] = min(
+            100,
+            form_int(
+                "rob_chance",
+                economy["rob"]["success_chance"]
+            )
+        )
+        economy["rob"]["min_reward"] = form_int(
+            "rob_min",
+            economy["rob"]["min_reward"]
+        )
+        economy["rob"]["max_reward"] = form_int(
+            "rob_max",
+            economy["rob"]["max_reward"]
+        )
+        economy["rob"]["fail_loss"] = form_int(
+            "rob_loss",
+            economy["rob"]["fail_loss"]
+        )
+        economy["rob"]["cooldown"] = form_int(
+            "rob_cooldown",
+            economy["rob"]["cooldown"]
+        )
+
+        economy["blackjack"]["min_bet"] = form_int(
+            "blackjack_min",
+            economy["blackjack"]["min_bet"]
+        )
+        economy["blackjack"]["max_bet"] = form_int(
+            "blackjack_max",
+            economy["blackjack"]["max_bet"]
+        )
+        economy["blackjack"]["cooldown"] = form_int(
+            "blackjack_cooldown",
+            economy["blackjack"]["cooldown"]
+        )
+
+        economy["roulette"]["min_bet"] = form_int(
+            "roulette_min",
+            economy["roulette"]["min_bet"]
+        )
+        economy["roulette"]["max_bet"] = form_int(
+            "roulette_max",
+            economy["roulette"]["max_bet"]
+        )
+        economy["roulette"]["cooldown"] = form_int(
+            "roulette_cooldown",
+            economy["roulette"]["cooldown"]
+        )
+
+        economy["daily"]["reward"] = form_int(
+            "daily_reward",
+            economy["daily"]["reward"]
+        )
+        economy["daily"]["cooldown"] = form_int(
+            "daily_cooldown",
+            economy["daily"]["cooldown"]
+        )
+
+        economy["weekly"]["reward"] = form_int(
+            "weekly_reward",
+            economy["weekly"]["reward"]
+        )
+        economy["weekly"]["cooldown"] = form_int(
+            "weekly_cooldown",
+            economy["weekly"]["cooldown"]
+        )
+
+        economy["bank"]["max_storage"] = form_int(
+            "bank_storage",
+            economy["bank"]["max_storage"]
+        )
+        economy["bank"]["interest_rate"] = form_int(
+            "bank_interest",
+            economy["bank"]["interest_rate"]
+        )
+        economy["bank"]["interest_cooldown"] = form_int(
+            "bank_interest_cooldown",
+            economy["bank"]["interest_cooldown"]
+        )
+
+        # Keep min/max pairs valid.
+        economy["work"]["max_reward"] = max(
+            economy["work"]["min_reward"],
+            economy["work"]["max_reward"]
+        )
+        economy["crime"]["max_reward"] = max(
+            economy["crime"]["min_reward"],
+            economy["crime"]["max_reward"]
+        )
+        economy["rob"]["max_reward"] = max(
+            economy["rob"]["min_reward"],
+            economy["rob"]["max_reward"]
+        )
+        economy["blackjack"]["max_bet"] = max(
+            economy["blackjack"]["min_bet"],
+            economy["blackjack"]["max_bet"]
+        )
+        economy["roulette"]["max_bet"] = max(
+            economy["roulette"]["min_bet"],
+            economy["roulette"]["max_bet"]
+        )
+
+        with open(economy_path, "w", encoding="utf-8") as file:
+            json.dump(
+                economy,
+                file,
+                indent=4,
+                ensure_ascii=False
+            )
+
+        apply_result = save_and_apply_feature(
+            "economy",
+            economy
+        )
+
+        if apply_result and apply_result.get("ok"):
+            flash(
+                "Economy settings saved for this Discord server.",
+                "success"
+            )
+        else:
+            flash(
+                "Economy settings saved locally, but bot sync failed: "
+                + str(
+                    (apply_result or {}).get(
+                        "error",
+                        "Unknown error"
+                    )
+                ),
+                "warning"
+            )
+
+        return redirect(url_for("economy"))
 
     return render_template(
         "economy.html",
         economy=economy
     )
-    
+
+
 @app.route("/welcome", methods=["GET", "POST"])
 def welcome():
+    guild_id = str(session.get("selected_guild_id", "")).strip()
+    welcome_path = guild_feature_path(WELCOME_FILE, guild_id)
 
-    with open(guild_feature_path(WELCOME_FILE), "r", encoding="utf-8") as file:
-        welcome = json.load(file)
+    default_welcome = {
+        "guild_id": guild_id,
+        "enabled": False,
+        "channel": "",
+        "channel_id": "",
+        "message": "Welcome {user} to {server}!",
+        "image_url": "",
+        "banner_url": "",
+        "button": {
+            "enabled": False,
+            "text": "Open Dashboard",
+            "url": ""
+        },
+        "dm": {
+            "enabled": False,
+            "message": "Welcome to {server}!"
+        }
+    }
 
+    welcome = load_or_create_json(
+        welcome_path,
+        default_welcome
+    )
+
+    if not isinstance(welcome.get("button"), dict):
+        welcome["button"] = {}
+    if not isinstance(welcome.get("dm"), dict):
+        welcome["dm"] = {}
+
+    for key, value in default_welcome.items():
+        if key in {"button", "dm"}:
+            continue
+        welcome.setdefault(key, value)
+
+    for key, value in default_welcome["button"].items():
+        welcome["button"].setdefault(key, value)
+
+    for key, value in default_welcome["dm"].items():
+        welcome["dm"].setdefault(key, value)
+
+    welcome["guild_id"] = guild_id
 
     if request.method == "POST":
-
         welcome["enabled"] = "enabled" in request.form
 
-        welcome["channel"] = request.form["channel"]
+        channel_id = str(
+            request.form.get(
+                "channel",
+                request.form.get("channel_id", "")
+            )
+        ).strip()
+        welcome["channel"] = channel_id
+        welcome["channel_id"] = channel_id
 
-        welcome["message"] = request.form["message"]
+        welcome["message"] = request.form.get(
+            "message",
+            welcome.get("message", "")
+        )
+        welcome["image_url"] = request.form.get(
+            "image_url",
+            ""
+        ).strip()
+        welcome["banner_url"] = request.form.get(
+            "banner_url",
+            ""
+        ).strip()
 
-        welcome["image_url"] = request.form["image_url"]
+        welcome["button"]["enabled"] = (
+            "button_enabled" in request.form
+        )
+        welcome["button"]["text"] = request.form.get(
+            "button_text",
+            welcome["button"].get("text", "")
+        ).strip()
+        welcome["button"]["url"] = request.form.get(
+            "button_url",
+            ""
+        ).strip()
 
-        welcome["banner_url"] = request.form["banner_url"]
+        welcome["dm"]["enabled"] = (
+            "dm_enabled" in request.form
+        )
+        welcome["dm"]["message"] = request.form.get(
+            "dm_message",
+            welcome["dm"].get("message", "")
+        )
 
+        with open(welcome_path, "w", encoding="utf-8") as file:
+            json.dump(
+                welcome,
+                file,
+                indent=4,
+                ensure_ascii=False
+            )
 
-        welcome["button"]["enabled"] = "button_enabled" in request.form
+        apply_result = save_and_apply_feature(
+            "welcome",
+            welcome
+        )
 
-        welcome["button"]["text"] = request.form["button_text"]
+        if apply_result and apply_result.get("ok"):
+            flash(
+                "Welcome settings saved and published for this Discord server.",
+                "success"
+            )
+        else:
+            flash(
+                "Welcome settings saved, but publishing failed: "
+                + str(
+                    (apply_result or {}).get(
+                        "error",
+                        "Unknown error"
+                    )
+                ),
+                "warning"
+            )
 
-        welcome["button"]["url"] = request.form["button_url"]
-
-
-        welcome["dm"]["enabled"] = "dm_enabled" in request.form
-
-        welcome["dm"]["message"] = request.form["dm_message"]
-
-
-        with open(guild_feature_path(WELCOME_FILE), "w", encoding="utf-8") as file:
-            json.dump(welcome, file, indent=4)
-
-        apply_result = save_and_apply_feature("welcome", welcome)
-
+        return redirect(url_for("welcome"))
 
     return render_template(
         "welcome.html",
         welcome=welcome
     )
+
+
 @app.route("/tickets", methods=["GET", "POST"])
 def tickets():
     default_ticket = {

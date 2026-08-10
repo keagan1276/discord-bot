@@ -5558,7 +5558,11 @@ async def balance(interaction: discord.Interaction):
 @tree.command(name="work", description="Work to earn money")
 @app_commands.checks.cooldown(1, 600)
 async def work(interaction: discord.Interaction):
-    earn = random.randint(10, 100)
+    config = _guild_economy_settings(interaction.guild_id)
+    work_config = config.get("work", {})
+    minimum = max(0, int(work_config.get("min_reward", 10) or 10))
+    maximum = max(minimum, int(work_config.get("max_reward", 100) or 100))
+    earn = random.randint(minimum, maximum)
     update_bank(interaction.guild_id, interaction.user.id, earn)
     await interaction.response.send_message(
         f"🛠 You earned ${earn}"
@@ -5567,8 +5571,19 @@ async def work(interaction: discord.Interaction):
 @tree.command(name="daily", description="Claim daily reward")
 @app_commands.checks.cooldown(1, 86400)
 async def daily(interaction: discord.Interaction):
-    update_bank(interaction.guild_id, interaction.user.id, DAILY_REWARD)
-    await interaction.response.send_message(f"🎁 You received ${DAILY_REWARD}")
+    config = _guild_economy_settings(interaction.guild_id)
+    reward = max(
+        0,
+        int(config.get("daily", {}).get("reward", DAILY_REWARD) or DAILY_REWARD)
+    )
+    update_bank(
+        interaction.guild_id,
+        interaction.user.id,
+        reward
+    )
+    await interaction.response.send_message(
+        f"🎁 You received ${reward}"
+    )
 
 @tree.command(name="deposit")
 async def deposit(interaction: discord.Interaction, amount: int):
@@ -6229,6 +6244,17 @@ class BlackjackView(discord.ui.View):
 @app_commands.checks.cooldown(1, 45)
 @app_commands.describe(bet="Bet")
 async def blackjack(interaction: discord.Interaction, bet: int):
+    economy_config = _guild_economy_settings(interaction.guild_id)
+    game_config = economy_config.get("blackjack", {})
+    min_bet = max(1, int(game_config.get("min_bet", 10) or 10))
+    max_bet = max(min_bet, int(game_config.get("max_bet", 1000) or 1000))
+
+    if bet < min_bet or bet > max_bet:
+        return await interaction.response.send_message(
+            f"❌ Blackjack bets must be between ${min_bet:,} and ${max_bet:,}.",
+            ephemeral=True
+        )
+
     users = get_bank(interaction.guild_id)
     if bet > users.get(str(interaction.user.id), {}).get("wallet", 0):
         return await interaction.response.send_message("❌ Not enough money")
@@ -6244,6 +6270,17 @@ async def blackjack(interaction: discord.Interaction, bet: int):
 @app_commands.checks.cooldown(1, 60)
 @app_commands.describe(amount="Bet", choice="Red / Black / Green / 0-36")
 async def roulette(interaction: discord.Interaction, amount: int, choice: str):
+    economy_config = _guild_economy_settings(interaction.guild_id)
+    game_config = economy_config.get("roulette", {})
+    min_bet = max(1, int(game_config.get("min_bet", 10) or 10))
+    max_bet = max(min_bet, int(game_config.get("max_bet", 1000) or 1000))
+
+    if amount < min_bet or amount > max_bet:
+        return await interaction.response.send_message(
+            f"❌ Roulette bets must be between ${min_bet:,} and ${max_bet:,}.",
+            ephemeral=True
+        )
+
     users = get_bank(interaction.guild_id)
     if amount > users.get(str(interaction.user.id), {}).get("wallet", 0):
         return await interaction.response.send_message("❌ Not enough money")
@@ -6877,6 +6914,52 @@ def _deadside_find_link_by_gamertag(guild_id, gamertag):
 def _deadside_find_link_by_discord(guild_id, discord_id):
     _, guild_data = _deadside_linked_players(guild_id)
     return guild_data.get("users", {}).get(str(discord_id))
+
+
+
+def _guild_economy_settings(guild_id):
+    defaults = {
+        "work": {"min_reward": 10, "max_reward": 100, "cooldown": 600},
+        "crime": {
+            "success_chance": 50,
+            "min_reward": 50,
+            "max_reward": 250,
+            "fail_loss": 50,
+            "cooldown": 900
+        },
+        "rob": {
+            "success_chance": 40,
+            "min_reward": 10,
+            "max_reward": 100,
+            "fail_loss": 50,
+            "cooldown": 900
+        },
+        "blackjack": {"min_bet": 10, "max_bet": 1000, "cooldown": 45},
+        "roulette": {"min_bet": 10, "max_bet": 1000, "cooldown": 60},
+        "daily": {"reward": 500, "cooldown": 86400},
+        "weekly": {"reward": 2500, "cooldown": 604800},
+        "bank": {
+            "max_storage": 1000000,
+            "interest_rate": 0,
+            "interest_cooldown": 86400
+        }
+    }
+
+    data = _guild_feature_read(
+        ECONOMY_FILE,
+        guild_id,
+        {}
+    )
+    if not isinstance(data, dict):
+        data = {}
+
+    for section, values in defaults.items():
+        if not isinstance(data.get(section), dict):
+            data[section] = {}
+        for key, value in values.items():
+            data[section].setdefault(key, value)
+
+    return data
 
 
 def _economy_account(users, discord_id):
@@ -8561,17 +8644,64 @@ async def apply_dashboard_feature(feature, guild_id=None):
 
     if feature == "welcome":
         data = _guild_feature_read(WELCOME_FILE, guild_id, {})
-        channel = _find_guild_text_channel(guild_id, data.get("channel") or data.get("channel_id"))
-        if not channel: raise RuntimeError("Choose a valid welcome channel.")
-        data["guild_id"] = str(channel.guild.id)
-        preview = str(data.get("message", "Welcome {user} to {server}!"))
-        preview = preview.replace("{user}", bot.user.mention).replace("{server}", channel.guild.name)
-        embed = discord.Embed(title="👋 Welcome preview", description=preview, colour=discord.Color.red())
-        image = data.get("banner_url") or data.get("image_url")
-        if image: embed.set_image(url=image)
-        await _send_or_edit(channel, data, "preview_message_id", embed=embed)
-        _guild_feature_write(WELCOME_FILE, guild_id, data)
-        return {"message": f"Welcome settings applied in #{channel.name}"}
+
+        if not data.get("enabled", False):
+            return {
+                "message": "Welcome system saved for this server (currently disabled)."
+            }
+
+        channel = _find_guild_text_channel(
+            guild_id,
+            data.get("channel") or data.get("channel_id")
+        )
+
+        if not channel:
+            raise RuntimeError(
+                "Choose a valid welcome channel in this Discord server."
+            )
+
+        data["guild_id"] = str(guild_id)
+
+        preview = str(
+            data.get(
+                "message",
+                "Welcome {user} to {server}!"
+            )
+        )
+        preview = (
+            preview
+            .replace("{user}", bot.user.mention)
+            .replace("{server}", channel.guild.name)
+        )
+
+        embed = discord.Embed(
+            title="👋 Welcome preview",
+            description=preview,
+            colour=discord.Color.red()
+        )
+
+        image = (
+            data.get("banner_url")
+            or data.get("image_url")
+        )
+        if image:
+            embed.set_image(url=image)
+
+        await _send_or_edit(
+            channel,
+            data,
+            "preview_message_id",
+            embed=embed
+        )
+        _guild_feature_write(
+            WELCOME_FILE,
+            guild_id,
+            data
+        )
+
+        return {
+            "message": f"Welcome settings applied in #{channel.name}"
+        }
 
     if feature == "moderation":
         data = _guild_feature_read(MODERATION_FILE, guild_id, {})
