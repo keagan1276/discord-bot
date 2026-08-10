@@ -17,6 +17,7 @@ from discord.ext import tasks
 import secrets
 import urllib.request
 import urllib.error
+import urllib.parse
 import ftplib
 import fnmatch
 import hashlib
@@ -658,6 +659,13 @@ DAYZ_PLAYERS_FILE = os.path.join(BASE_DIR, "dayz_players.json")
 DAYZ_BOUNTIES_FILE = os.path.join(BASE_DIR, "dayz_bounties.json")
 DAYZ_SHOP_FILE = os.path.join(BASE_DIR, "dayz_shop.json")
 DAYZ_SPAWN_QUEUE_FILE = os.path.join(BASE_DIR, "dayz_spawn_queue.json")
+XBOX_PLAYERS_FILE = os.path.join(BASE_DIR, "xbox_players.json")
+OPENXBL_API_KEY = os.getenv("OPENXBL_API_KEY", "").strip()
+OPENXBL_BASE_URL = os.getenv(
+    "OPENXBL_BASE_URL",
+    "https://api.xbl.io/api/v2"
+).rstrip("/")
+
 TRANSCRIPTS_FOLDER = os.path.join(BASE_DIR, "ticket_transcripts")
 os.makedirs(TRANSCRIPTS_FOLDER, exist_ok=True)
 
@@ -2459,6 +2467,1232 @@ bot.tree.interaction_check = (
 )
     
 
+
+# =========================================================
+# XBOX / OPENXBL INTEGRATION
+# =========================================================
+
+def _xbox_load_links():
+    data = load_json(
+        XBOX_PLAYERS_FILE,
+        {"guilds": {}}
+    )
+    if not isinstance(data, dict):
+        data = {"guilds": {}}
+    data.setdefault("guilds", {})
+    return data
+
+
+def _xbox_save_links(data):
+    save_json(
+        XBOX_PLAYERS_FILE,
+        data
+    )
+
+
+def _xbox_get_link(guild_id, discord_user_id):
+    root = _xbox_load_links()
+    return (
+        root.get("guilds", {})
+        .get(str(guild_id), {})
+        .get(str(discord_user_id))
+    )
+
+
+def _xbox_set_link(guild_id, discord_user_id, profile):
+    root = _xbox_load_links()
+    guilds = root.setdefault("guilds", {})
+    guild_data = guilds.setdefault(str(guild_id), {})
+
+    linked = {
+        "gamertag": str(
+            profile.get("gamertag")
+            or profile.get("gameDisplayName")
+            or profile.get("displayName")
+            or ""
+        ).strip(),
+        "xuid": str(
+            profile.get("xuid")
+            or profile.get("id")
+            or profile.get("xboxUserId")
+            or ""
+        ).strip(),
+        "profile_picture": str(
+            profile.get("profilePicture")
+            or profile.get("displayPicRaw")
+            or profile.get("displayPic")
+            or ""
+        ).strip(),
+        "gamerscore": str(
+            profile.get("gamerscore")
+            or profile.get("gamerScore")
+            or profile.get("Gamerscore")
+            or ""
+        ).strip(),
+        "linked_at": time.time()
+    }
+
+    guild_data[str(discord_user_id)] = linked
+    _xbox_save_links(root)
+    return linked
+
+
+def _xbox_unlink(guild_id, discord_user_id):
+    root = _xbox_load_links()
+    guild_data = root.get("guilds", {}).get(str(guild_id), {})
+    removed = guild_data.pop(str(discord_user_id), None)
+    _xbox_save_links(root)
+    return removed
+
+
+def _xbox_api_request(path, params=None):
+    if not OPENXBL_API_KEY:
+        raise RuntimeError(
+            "OPENXBL_API_KEY is not configured on the bot service."
+        )
+
+    url = f"{OPENXBL_BASE_URL}/{str(path).lstrip('/')}"
+    if params:
+        query = urllib.parse.urlencode(
+            {
+                key: value
+                for key, value in params.items()
+                if value is not None and str(value) != ""
+            }
+        )
+        if query:
+            url += "?" + query
+
+    request_obj = urllib.request.Request(
+        url,
+        method="GET",
+        headers={
+            "X-Authorization": OPENXBL_API_KEY,
+            "Accept": "application/json",
+            "User-Agent": "PiratesBot-Xbox/1.0"
+        }
+    )
+
+    try:
+        with urllib.request.urlopen(
+            request_obj,
+            timeout=25
+        ) as response:
+            raw = response.read().decode(
+                "utf-8",
+                errors="replace"
+            )
+            payload = json.loads(raw) if raw else {}
+            return payload
+    except urllib.error.HTTPError as error:
+        details = error.read().decode(
+            "utf-8",
+            errors="replace"
+        )[:500]
+
+        if error.code == 429:
+            raise RuntimeError(
+                "OpenXBL rate limit reached. Please try again shortly."
+            ) from error
+
+        raise RuntimeError(
+            f"OpenXBL returned HTTP {error.code}: {details}"
+        ) from error
+    except urllib.error.URLError as error:
+        raise RuntimeError(
+            f"Could not connect to OpenXBL: {error}"
+        ) from error
+
+
+def _xbox_walk_objects(value):
+    if isinstance(value, dict):
+        yield value
+        for nested in value.values():
+            yield from _xbox_walk_objects(nested)
+    elif isinstance(value, list):
+        for nested in value:
+            yield from _xbox_walk_objects(nested)
+
+
+def _xbox_normalize_profile(payload, requested_gamertag=""):
+    candidates = list(_xbox_walk_objects(payload))
+
+    requested = str(requested_gamertag).casefold().strip()
+
+    def score(item):
+        value = str(
+            item.get("gamertag")
+            or item.get("gameDisplayName")
+            or item.get("displayName")
+            or ""
+        ).casefold().strip()
+
+        result = 0
+        if value:
+            result += 2
+        if requested and value == requested:
+            result += 10
+        if item.get("xuid") or item.get("xboxUserId"):
+            result += 4
+        if item.get("gamerscore") or item.get("gamerScore"):
+            result += 1
+        return result
+
+    candidates.sort(
+        key=score,
+        reverse=True
+    )
+
+    if not candidates or score(candidates[0]) == 0:
+        raise RuntimeError(
+            f"I could not find the Xbox profile `{requested_gamertag}`."
+        )
+
+    profile = dict(candidates[0])
+
+    # Some API responses keep profile values in a settings list.
+    settings = profile.get("settings")
+    if isinstance(settings, list):
+        for setting in settings:
+            if not isinstance(setting, dict):
+                continue
+            key = str(
+                setting.get("id")
+                or setting.get("setting")
+                or ""
+            )
+            value = setting.get("value")
+            if key and value is not None:
+                profile.setdefault(key, value)
+
+    aliases = {
+        "gamertag": (
+            "gamertag",
+            "GameDisplayName",
+            "gameDisplayName",
+            "displayName"
+        ),
+        "xuid": (
+            "xuid",
+            "xboxUserId",
+            "id"
+        ),
+        "gamerscore": (
+            "gamerscore",
+            "gamerScore",
+            "Gamerscore"
+        ),
+        "profilePicture": (
+            "profilePicture",
+            "GameDisplayPicRaw",
+            "displayPicRaw",
+            "displayPic"
+        ),
+        "accountTier": (
+            "accountTier",
+            "AccountTier"
+        ),
+        "tenure": (
+            "tenure",
+            "TenureLevel"
+        )
+    }
+
+    normalized = {}
+    for target, keys in aliases.items():
+        for key in keys:
+            value = profile.get(key)
+            if value not in (None, ""):
+                normalized[target] = value
+                break
+
+    normalized.update({
+        key: value
+        for key, value in profile.items()
+        if key not in normalized
+    })
+
+    return normalized
+
+
+def _xbox_lookup_profile(gamertag):
+    gamertag = str(gamertag or "").strip()
+    if not gamertag:
+        raise RuntimeError("Enter an Xbox gamertag.")
+
+    encoded = urllib.parse.quote(
+        gamertag,
+        safe=""
+    )
+
+    errors = []
+
+    # Current OpenXBL public docs advertise the player/gamertag endpoint.
+    for path, params in (
+        (f"player/gamertag/{encoded}", None),
+        ("friends/search", {"gt": gamertag}),
+    ):
+        try:
+            payload = _xbox_api_request(
+                path,
+                params
+            )
+            return _xbox_normalize_profile(
+                payload,
+                gamertag
+            )
+        except Exception as error:
+            errors.append(str(error))
+
+    raise RuntimeError(
+        errors[-1]
+        if errors
+        else "Xbox profile lookup failed."
+    )
+
+
+def _xbox_extract_titles(payload):
+    titles = []
+    seen = set()
+
+    for item in _xbox_walk_objects(payload):
+        name = str(
+            item.get("name")
+            or item.get("titleName")
+            or item.get("title")
+            or item.get("displayName")
+            or ""
+        ).strip()
+
+        title_id = str(
+            item.get("titleId")
+            or item.get("titleID")
+            or item.get("id")
+            or ""
+        ).strip()
+
+        if not name:
+            continue
+
+        marker = (
+            name.casefold(),
+            title_id
+        )
+        if marker in seen:
+            continue
+
+        # Avoid treating generic profile/user objects as games.
+        game_signals = (
+            "titleId",
+            "titleID",
+            "lastPlayed",
+            "lastTimePlayed",
+            "currentGamerscore",
+            "maxGamerscore",
+            "minutesPlayed",
+            "playtime",
+            "devices"
+        )
+        if not title_id and not any(
+            signal in item
+            for signal in game_signals
+        ):
+            continue
+
+        seen.add(marker)
+        titles.append({
+            "name": name,
+            "title_id": title_id,
+            "raw": item
+        })
+
+    return titles
+
+
+def _xbox_title_history(xuid):
+    xuid = str(xuid or "").strip()
+    if not xuid:
+        raise RuntimeError(
+            "This Xbox link does not have an XUID. Relink your gamertag."
+        )
+
+    errors = []
+
+    # Endpoint variants are attempted for compatibility with OpenXBL API
+    # revisions. Unsupported variants simply fall through to the next.
+    candidates = (
+        (f"player/titleHistory/{xuid}", None),
+        (f"player/{xuid}/titleHistory", None),
+        ("player/titleHistory", {"xuid": xuid}),
+        (f"titleHistory/{xuid}", None),
+    )
+
+    for path, params in candidates:
+        try:
+            payload = _xbox_api_request(
+                path,
+                params
+            )
+            titles = _xbox_extract_titles(
+                payload
+            )
+            if titles:
+                return titles
+        except Exception as error:
+            errors.append(str(error))
+
+    raise RuntimeError(
+        "OpenXBL did not return Xbox title history for this account. "
+        "The profile may be private, or the title-history endpoint may not "
+        "be available for this account/API revision."
+    )
+
+
+def _xbox_find_title(titles, game):
+    game_key = str(game or "").casefold().strip()
+    if not game_key:
+        return None
+
+    exact = [
+        title
+        for title in titles
+        if title["name"].casefold() == game_key
+    ]
+    if exact:
+        return exact[0]
+
+    contains = [
+        title
+        for title in titles
+        if game_key in title["name"].casefold()
+        or title["name"].casefold() in game_key
+    ]
+    if contains:
+        contains.sort(
+            key=lambda item: abs(
+                len(item["name"]) - len(game)
+            )
+        )
+        return contains[0]
+
+    words = [
+        word
+        for word in re.findall(
+            r"[a-z0-9]+",
+            game_key
+        )
+        if len(word) >= 3
+    ]
+
+    scored = []
+    for title in titles:
+        name = title["name"].casefold()
+        score = sum(
+            1
+            for word in words
+            if word in name
+        )
+        if score:
+            scored.append(
+                (score, title)
+            )
+
+    if scored:
+        scored.sort(
+            key=lambda item: item[0],
+            reverse=True
+        )
+        return scored[0][1]
+
+    return None
+
+
+def _xbox_achievement_items(payload):
+    achievements = []
+    seen = set()
+
+    for item in _xbox_walk_objects(payload):
+        name = str(
+            item.get("name")
+            or item.get("achievementName")
+            or item.get("displayName")
+            or ""
+        ).strip()
+
+        if not name:
+            continue
+
+        signals = (
+            "progressState",
+            "isSecret",
+            "rewards",
+            "rarity",
+            "timeUnlocked",
+            "progression",
+            "description",
+            "lockedDescription"
+        )
+
+        if not any(
+            key in item
+            for key in signals
+        ):
+            continue
+
+        marker = (
+            str(item.get("id", "")),
+            name.casefold()
+        )
+        if marker in seen:
+            continue
+        seen.add(marker)
+        achievements.append(item)
+
+    return achievements
+
+
+def _xbox_achievements(xuid, title_id=None):
+    xuid = str(xuid or "").strip()
+    title_id = str(title_id or "").strip()
+
+    candidates = []
+
+    if title_id:
+        candidates.extend([
+            (f"achievements/player/{xuid}/{title_id}", None),
+            (f"achievements/player/{xuid}", {"titleId": title_id}),
+            (f"player/{xuid}/achievements/{title_id}", None),
+        ])
+
+    candidates.extend([
+        (f"achievements/player/{xuid}", None),
+        (f"player/{xuid}/achievements", None),
+    ])
+
+    errors = []
+
+    for path, params in candidates:
+        try:
+            payload = _xbox_api_request(
+                path,
+                params
+            )
+            items = _xbox_achievement_items(
+                payload
+            )
+            if items:
+                return items
+        except Exception as error:
+            errors.append(str(error))
+
+    return []
+
+
+def _xbox_value(raw, *keys):
+    for key in keys:
+        value = raw.get(key)
+        if value not in (None, "", []):
+            return value
+    return None
+
+
+def _xbox_game_summary(link, game):
+    titles = _xbox_title_history(
+        link.get("xuid")
+    )
+    title = _xbox_find_title(
+        titles,
+        game
+    )
+
+    if not title:
+        available = ", ".join(
+            item["name"]
+            for item in titles[:8]
+        )
+        raise RuntimeError(
+            f"I couldn't find `{game}` in this Xbox title history."
+            + (
+                f" Recent titles include: {available}"
+                if available
+                else ""
+            )
+        )
+
+    raw = title["raw"]
+    achievements = _xbox_achievements(
+        link.get("xuid"),
+        title.get("title_id")
+    )
+
+    unlocked = 0
+    for achievement in achievements:
+        state = str(
+            achievement.get("progressState")
+            or achievement.get("state")
+            or ""
+        ).casefold()
+        if state in {
+            "achieved",
+            "unlocked",
+            "completed"
+        }:
+            unlocked += 1
+        elif achievement.get("timeUnlocked"):
+            unlocked += 1
+
+    summary = {
+        "gamertag": link.get("gamertag", ""),
+        "game": title["name"],
+        "title_id": title.get("title_id", ""),
+        "achievements_unlocked": unlocked,
+        "achievements_total": len(achievements),
+        "current_gamerscore": _xbox_value(
+            raw,
+            "currentGamerscore",
+            "gamerscore",
+            "gamerScore"
+        ),
+        "max_gamerscore": _xbox_value(
+            raw,
+            "maxGamerscore",
+            "totalGamerscore"
+        ),
+        "last_played": _xbox_value(
+            raw,
+            "lastPlayed",
+            "lastTimePlayed",
+            "lastPlayedDate",
+            "lastUnlock"
+        ),
+        "playtime": _xbox_value(
+            raw,
+            "playtime",
+            "minutesPlayed",
+            "timePlayed",
+            "totalTimePlayed"
+        ),
+        "raw_title": raw,
+        "achievements": achievements
+    }
+
+    return summary
+
+
+def _xbox_profile_embed(link, live_profile=None):
+    profile = dict(link or {})
+    if isinstance(live_profile, dict):
+        profile.update({
+            key: value
+            for key, value in live_profile.items()
+            if value not in (None, "")
+        })
+
+    gamertag = str(
+        profile.get("gamertag")
+        or "Linked Xbox Account"
+    )
+
+    embed = discord.Embed(
+        title=f"🎮 Xbox Profile • {gamertag}",
+        colour=discord.Colour.green()
+    )
+
+    gamerscore = profile.get("gamerscore")
+    if gamerscore not in (None, ""):
+        embed.add_field(
+            name="Gamerscore",
+            value=f"{gamerscore}",
+            inline=True
+        )
+
+    xuid = profile.get("xuid")
+    if xuid:
+        embed.add_field(
+            name="XUID",
+            value=f"`{xuid}`",
+            inline=True
+        )
+
+    tier = profile.get("accountTier")
+    if tier:
+        embed.add_field(
+            name="Account Tier",
+            value=str(tier),
+            inline=True
+        )
+
+    tenure = profile.get("tenure")
+    if tenure not in (None, ""):
+        embed.add_field(
+            name="Tenure",
+            value=str(tenure),
+            inline=True
+        )
+
+    picture = (
+        profile.get("profilePicture")
+        or profile.get("profile_picture")
+    )
+    if picture:
+        embed.set_thumbnail(
+            url=str(picture)
+        )
+
+    embed.set_footer(
+        text="Pirates Bot • Xbox via OpenXBL"
+    )
+    return embed
+
+
+def _xbox_stats_embed(summary):
+    embed = discord.Embed(
+        title=f"🎮 {summary['game']}",
+        description=(
+            f"Xbox stats for **{summary['gamertag']}**"
+        ),
+        colour=discord.Colour.green()
+    )
+
+    total = int(
+        summary.get("achievements_total")
+        or 0
+    )
+    unlocked = int(
+        summary.get("achievements_unlocked")
+        or 0
+    )
+
+    if total:
+        embed.add_field(
+            name="Achievements",
+            value=f"{unlocked}/{total} unlocked",
+            inline=True
+        )
+
+    current_score = summary.get(
+        "current_gamerscore"
+    )
+    max_score = summary.get(
+        "max_gamerscore"
+    )
+
+    if current_score not in (None, ""):
+        value = str(current_score)
+        if max_score not in (None, ""):
+            value += f"/{max_score}"
+        embed.add_field(
+            name="Game Gamerscore",
+            value=value,
+            inline=True
+        )
+
+    if summary.get("playtime") not in (None, ""):
+        embed.add_field(
+            name="Playtime",
+            value=str(summary["playtime"]),
+            inline=True
+        )
+
+    if summary.get("last_played") not in (None, ""):
+        embed.add_field(
+            name="Last Played",
+            value=str(summary["last_played"])[:1024],
+            inline=False
+        )
+
+    if summary.get("title_id"):
+        embed.add_field(
+            name="Title ID",
+            value=f"`{summary['title_id']}`",
+            inline=True
+        )
+
+    embed.set_footer(
+        text=(
+            "Pirates Bot • Xbox via OpenXBL • "
+            "Available stats depend on what Xbox exposes for each game"
+        )
+    )
+    return embed
+
+
+def _xbox_achievements_embed(summary):
+    achievements = summary.get(
+        "achievements",
+        []
+    )
+
+    embed = discord.Embed(
+        title=f"🏆 {summary['game']} Achievements",
+        description=(
+            f"Achievement data for **{summary['gamertag']}**"
+        ),
+        colour=discord.Colour.gold()
+    )
+
+    if not achievements:
+        embed.description += (
+            "\n\nNo achievement details were returned for this title."
+        )
+        return embed
+
+    unlocked = []
+
+    for achievement in achievements:
+        state = str(
+            achievement.get("progressState")
+            or achievement.get("state")
+            or ""
+        ).casefold()
+
+        if (
+            state in {"achieved", "unlocked", "completed"}
+            or achievement.get("timeUnlocked")
+        ):
+            unlocked.append(
+                achievement
+            )
+
+    embed.add_field(
+        name="Progress",
+        value=(
+            f"**{len(unlocked)} / {len(achievements)}** unlocked"
+        ),
+        inline=False
+    )
+
+    recent = unlocked[-8:] if unlocked else achievements[:8]
+
+    lines = []
+    for achievement in recent:
+        name = str(
+            achievement.get("name")
+            or achievement.get("achievementName")
+            or "Achievement"
+        )[:80]
+        lines.append(
+            f"🏆 {name}"
+        )
+
+    if lines:
+        embed.add_field(
+            name=(
+                "Unlocked Achievements"
+                if unlocked
+                else "Achievements"
+            ),
+            value="\n".join(lines)[:1024],
+            inline=False
+        )
+
+    embed.set_footer(
+        text="Pirates Bot • Xbox via OpenXBL"
+    )
+    return embed
+
+
+xbox_group = app_commands.Group(
+    name="xbox",
+    description="Xbox account linking, profiles and game statistics"
+)
+
+
+@xbox_group.command(
+    name="link",
+    description="Link your Discord account to an Xbox gamertag"
+)
+@app_commands.describe(
+    gamertag="Your Xbox gamertag"
+)
+async def xbox_link_command(
+    interaction: discord.Interaction,
+    gamertag: str
+):
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            "❌ This command can only be used in a server.",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.defer(
+        ephemeral=True,
+        thinking=True
+    )
+
+    try:
+        profile = await asyncio.to_thread(
+            _xbox_lookup_profile,
+            gamertag
+        )
+
+        linked = _xbox_set_link(
+            interaction.guild.id,
+            interaction.user.id,
+            profile
+        )
+
+        save_guild_log(
+            interaction.guild.id,
+            "xbox_link",
+            {
+                "discord_user_id": str(interaction.user.id),
+                "discord_user_name": str(interaction.user),
+                "gamertag": linked.get("gamertag"),
+                "xuid": linked.get("xuid")
+            }
+        )
+
+        embed = _xbox_profile_embed(
+            linked,
+            profile
+        )
+        embed.description = (
+            f"✅ {interaction.user.mention} is now linked to this Xbox account."
+        )
+
+        await interaction.followup.send(
+            embed=embed,
+            ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none()
+        )
+
+    except Exception as error:
+        print(f"Xbox link error: {error}")
+        await interaction.followup.send(
+            f"❌ Xbox linking failed: {error}",
+            ephemeral=True
+        )
+
+
+@xbox_group.command(
+    name="profile",
+    description="Show your linked Xbox profile"
+)
+async def xbox_profile_command(
+    interaction: discord.Interaction
+):
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            "❌ This command can only be used in a server.",
+            ephemeral=True
+        )
+        return
+
+    link = _xbox_get_link(
+        interaction.guild.id,
+        interaction.user.id
+    )
+
+    if not link:
+        await interaction.response.send_message(
+            "❌ You have not linked an Xbox account yet. "
+            "Use `/xbox link gamertag:<your gamertag>`.",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.defer(
+        thinking=True
+    )
+
+    live = None
+    try:
+        live = await asyncio.to_thread(
+            _xbox_lookup_profile,
+            link.get("gamertag")
+        )
+    except Exception as error:
+        print(f"Xbox profile refresh error: {error}")
+
+    await interaction.followup.send(
+        embed=_xbox_profile_embed(
+            link,
+            live
+        )
+    )
+
+
+@xbox_group.command(
+    name="stats",
+    description="Show your Xbox stats for a game"
+)
+@app_commands.describe(
+    game="Game title, for example Call of Duty"
+)
+async def xbox_stats_command(
+    interaction: discord.Interaction,
+    game: str
+):
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            "❌ This command can only be used in a server.",
+            ephemeral=True
+        )
+        return
+
+    link = _xbox_get_link(
+        interaction.guild.id,
+        interaction.user.id
+    )
+
+    if not link:
+        await interaction.response.send_message(
+            "❌ Link your Xbox account first with "
+            "`/xbox link gamertag:<your gamertag>`.",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.defer(
+        thinking=True
+    )
+
+    try:
+        summary = await asyncio.to_thread(
+            _xbox_game_summary,
+            link,
+            game
+        )
+        await interaction.followup.send(
+            embed=_xbox_stats_embed(
+                summary
+            )
+        )
+    except Exception as error:
+        print(f"Xbox stats error: {error}")
+        await interaction.followup.send(
+            f"❌ I couldn't load those Xbox stats: {error}",
+            ephemeral=True
+        )
+
+
+@xbox_group.command(
+    name="achievements",
+    description="Show Xbox achievements for a game"
+)
+@app_commands.describe(
+    game="Game title, for example Call of Duty"
+)
+async def xbox_achievements_command(
+    interaction: discord.Interaction,
+    game: str
+):
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            "❌ This command can only be used in a server.",
+            ephemeral=True
+        )
+        return
+
+    link = _xbox_get_link(
+        interaction.guild.id,
+        interaction.user.id
+    )
+
+    if not link:
+        await interaction.response.send_message(
+            "❌ Link your Xbox account first with "
+            "`/xbox link gamertag:<your gamertag>`.",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.defer(
+        thinking=True
+    )
+
+    try:
+        summary = await asyncio.to_thread(
+            _xbox_game_summary,
+            link,
+            game
+        )
+        await interaction.followup.send(
+            embed=_xbox_achievements_embed(
+                summary
+            )
+        )
+    except Exception as error:
+        print(f"Xbox achievements error: {error}")
+        await interaction.followup.send(
+            f"❌ I couldn't load those achievements: {error}",
+            ephemeral=True
+        )
+
+
+@xbox_group.command(
+    name="unlink",
+    description="Unlink your Xbox account from Pirates Bot"
+)
+async def xbox_unlink_command(
+    interaction: discord.Interaction
+):
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            "❌ This command can only be used in a server.",
+            ephemeral=True
+        )
+        return
+
+    removed = _xbox_unlink(
+        interaction.guild.id,
+        interaction.user.id
+    )
+
+    if not removed:
+        await interaction.response.send_message(
+            "ℹ️ You do not currently have an Xbox account linked.",
+            ephemeral=True
+        )
+        return
+
+    save_guild_log(
+        interaction.guild.id,
+        "xbox_unlink",
+        {
+            "discord_user_id": str(interaction.user.id),
+            "discord_user_name": str(interaction.user),
+            "gamertag": removed.get("gamertag", "")
+        }
+    )
+
+    await interaction.response.send_message(
+        "✅ Your Xbox account has been unlinked.",
+        ephemeral=True
+    )
+
+
+bot.tree.add_command(
+    xbox_group
+)
+
+
+async def _pirate_try_xbox_request(message, question):
+    """
+    Handle natural Pirate Xbox questions before they are sent to Gemini.
+
+    Examples:
+      Pirate show me my Xbox stats for Call of Duty
+      Pirate show my Xbox achievements for Minecraft
+      Pirate show me my Xbox profile
+    """
+    if not message.guild:
+        return False
+
+    q = str(question or "").strip()
+
+    if not re.search(
+        r"(?i)\bxbox\b",
+        q
+    ):
+        return False
+
+    link = _xbox_get_link(
+        message.guild.id,
+        message.author.id
+    )
+
+    # Profile request.
+    if re.search(
+        r"(?i)\b(profile|account|gamertag)\b",
+        q
+    ) and not re.search(
+        r"(?i)\b(stats?|achievements?)\b",
+        q
+    ):
+        if not link:
+            await message.reply(
+                "🎮 You haven't linked an Xbox account yet. "
+                "Use `/xbox link gamertag:<your gamertag>` first.",
+                mention_author=False
+            )
+            return True
+
+        live = None
+        async with message.channel.typing():
+            try:
+                live = await asyncio.to_thread(
+                    _xbox_lookup_profile,
+                    link.get("gamertag")
+                )
+            except Exception as error:
+                print(f"Pirate Xbox profile error: {error}")
+
+        await message.reply(
+            embed=_xbox_profile_embed(
+                link,
+                live
+            ),
+            mention_author=False
+        )
+        return True
+
+    match = re.search(
+        r"(?i)\b(?:stats?|achievements?)\b.*?\bfor\b\s+(.+)$",
+        q
+    )
+
+    if not match:
+        match = re.search(
+            r"(?i)\bxbox\b.*?\bfor\b\s+(.+)$",
+            q
+        )
+
+    if not match:
+        return False
+
+    game = match.group(1).strip(" .!?")
+
+    if not game:
+        return False
+
+    if not link:
+        await message.reply(
+            "🎮 You haven't linked an Xbox account yet. "
+            "Use `/xbox link gamertag:<your gamertag>` first.",
+            mention_author=False
+        )
+        return True
+
+    wants_achievements = bool(
+        re.search(
+            r"(?i)\bachievements?\b",
+            q
+        )
+    )
+
+    async with message.channel.typing():
+        try:
+            summary = await asyncio.to_thread(
+                _xbox_game_summary,
+                link,
+                game
+            )
+        except Exception as error:
+            print(f"Pirate Xbox stats error: {error}")
+            await message.reply(
+                f"🎮 I couldn't load your Xbox data for **{game}**: {error}",
+                mention_author=False
+            )
+            return True
+
+    embed = (
+        _xbox_achievements_embed(summary)
+        if wants_achievements
+        else _xbox_stats_embed(summary)
+    )
+
+    await message.reply(
+        embed=embed,
+        mention_author=False
+    )
+    return True
+
+
+
+
 # ------------------- PIRATE GEMINI AI HELPER -------------------
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 PIRATE_AI_MODEL = (
@@ -2540,6 +3774,17 @@ COMMUNITY:
 - `/embed` creates a custom embed where enabled.
 - `/remindme minutes:<minutes> message:<message>` creates a reminder.
 - `/help setup` is an administrator command that posts the help guide.
+- `/xbox link gamertag:<gamertag>` links the Discord user to an Xbox account.
+- `/xbox profile` shows the linked Xbox profile.
+- `/xbox stats game:<game>` shows available Xbox title/achievement stats for a game.
+- `/xbox achievements game:<game>` shows achievement progress for a game.
+- `/xbox unlink` removes the Xbox link.
+- Users can also say `Pirate show me my Xbox stats for <game>` or
+  `Pirate show me my Xbox achievements for <game>`.
+- Xbox data comes from OpenXBL. Available game-specific statistics vary by title
+  and privacy settings, so never invent kills, deaths, wins or other stats that
+  are not returned by Xbox/OpenXBL.
+
 
 DEADSIDE:
 - `/ds link gamertag:<name>` links a Deadside gamertag.
@@ -2787,6 +4032,14 @@ async def process_pirate_ai_helper(message):
         return False
 
     question = match.group(1).strip()
+
+    # Handle Xbox requests directly using the user's linked account instead
+    # of asking Gemini to guess at private/live Xbox data.
+    if question and await _pirate_try_xbox_request(
+        message,
+        question
+    ):
+        return True
 
     if not question:
         await message.reply(
