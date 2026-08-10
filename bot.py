@@ -663,14 +663,14 @@ XBOX_PLAYERS_FILE = os.path.join(BASE_DIR, "xbox_players.json")
 OPENXBL_API_KEY = os.getenv("OPENXBL_API_KEY", "").strip()
 OPENXBL_BASE_URL = os.getenv(
     "OPENXBL_BASE_URL",
-    "https://api.xbl.io/v2"
+    "https://xbl.io/api/v2"
 ).rstrip("/")
 
 # OpenXBL's api.xbl.io gateway serves /v2/... directly. Older Pirates Bot
 # builds used /api/v2, which now returns HTTP 404. Repair an old Railway
 # override automatically so the integration keeps working after deployment.
 if OPENXBL_BASE_URL.rstrip("/").lower() == "https://api.xbl.io/api/v2":
-    OPENXBL_BASE_URL = "https://api.xbl.io/v2"
+    OPENXBL_BASE_URL = "https://xbl.io/api/v2"
 
 TRANSCRIPTS_FOLDER = os.path.join(BASE_DIR, "ticket_transcripts")
 os.makedirs(TRANSCRIPTS_FOLDER, exist_ok=True)
@@ -2733,11 +2733,12 @@ def _xbox_lookup_profile(gamertag):
 
     errors = []
 
-    # OpenXBL v2 gamertag lookup. The api.xbl.io host expects /v2,
-    # not /api/v2.
+    # OpenXBL's getting-started guide documents friends/search for
+    # looking up another gamertag and returning its XUID. Try it first,
+    # then fall back to the direct gamertag route.
     for path, params in (
-        (f"player/gamertag/{encoded}", None),
         ("friends/search", {"gt": gamertag}),
+        (f"player/gamertag/{encoded}", None),
     ):
         try:
             payload = _xbox_api_request(
