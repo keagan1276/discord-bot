@@ -703,9 +703,19 @@ FEATURE_FILES = {
 }
 
 SERVER_SCOPED_FEATURES = {
-    "welcome", "tickets", "moderation", "embeds", "reaction_roles",
-    "rules", "economy", "polls", "giveaways"
+    "welcome",
+    "tickets",
+    "moderation",
+    "embeds",
+    "reaction_roles",
+    "rules",
+    "economy",
+    "polls",
+    "giveaways",
+    "deadside",
+    "dayz",
 }
+
 
 def _guild_feature_read(path, guild_id, default=None):
     default = {} if default is None else default
@@ -4567,8 +4577,8 @@ def ticket_button_style(value: str):
     )
 
 
-def active_ticket_options():
-    data = load_ticket_settings()
+def active_ticket_options(guild_id):
+    data = load_ticket_settings(guild_id)
 
     return [
         (index, option)
@@ -4590,7 +4600,8 @@ async def create_dashboard_ticket(
             thinking=True
         )
 
-    ticket_data = load_ticket_settings()
+    guild_id = interaction.guild_id
+    ticket_data = load_ticket_settings(guild_id)
     options = ticket_data.get("options", [])
 
     if option_index < 0 or option_index >= len(options):
@@ -4849,6 +4860,7 @@ async def create_dashboard_ticket(
 class TicketButton(discord.ui.Button):
     def __init__(
         self,
+        guild_id,
         option_index: int,
         option: dict,
         row: int
@@ -4864,7 +4876,7 @@ class TicketButton(discord.ui.Button):
             style=ticket_button_style(
                 option.get("button_color", "grey")
             ),
-            custom_id=f"pirates:ticket:{option_index}",
+            custom_id=f"pirates:ticket:{guild_id}:{option_index}",
             row=row
         )
 
@@ -4896,10 +4908,11 @@ class TicketButton(discord.ui.Button):
 
 
 class TicketButtonsView(discord.ui.View):
-    def __init__(self):
+    def __init__(self, guild_id):
         super().__init__(timeout=None)
+        self.guild_id = str(guild_id)
 
-        enabled_options = active_ticket_options()
+        enabled_options = active_ticket_options(self.guild_id)
 
         for display_index, (
             option_index,
@@ -4910,6 +4923,7 @@ class TicketButtonsView(discord.ui.View):
 
             self.add_item(
                 TicketButton(
+                    guild_id=self.guild_id,
                     option_index=option_index,
                     option=option,
                     row=row
@@ -4918,13 +4932,14 @@ class TicketButtonsView(discord.ui.View):
 
 
 class TicketDropdown(discord.ui.Select):
-    def __init__(self):
-        ticket_data = load_ticket_settings()
+    def __init__(self, guild_id):
+        self.guild_id = str(guild_id)
+        ticket_data = load_ticket_settings(self.guild_id)
         panel = ticket_data.get("panel", {})
 
         dropdown_options = []
 
-        for option_index, option in active_ticket_options():
+        for option_index, option in active_ticket_options(self.guild_id):
             dropdown_options.append(
                 discord.SelectOption(
                     label=str(
@@ -4967,7 +4982,7 @@ class TicketDropdown(discord.ui.Select):
             min_values=1,
             max_values=1,
             options=dropdown_options[:25],
-            custom_id="pirates:ticket_dropdown"
+            custom_id=f"pirates:ticket_dropdown:{self.guild_id}"
         )
 
     async def callback(
@@ -5005,9 +5020,10 @@ class TicketDropdown(discord.ui.Select):
 
 
 class TicketDropdownView(discord.ui.View):
-    def __init__(self):
+    def __init__(self, guild_id):
         super().__init__(timeout=None)
-        self.add_item(TicketDropdown())
+        self.guild_id = str(guild_id)
+        self.add_item(TicketDropdown(self.guild_id))
 
 
 class CloseTicketButton(discord.ui.Button):
@@ -5047,7 +5063,7 @@ class CloseTicketButton(discord.ui.Button):
             )
             return
 
-        ticket_data = load_ticket_settings()
+        ticket_data = load_ticket_settings(interaction.guild_id)
         settings = ticket_data.get("settings", {})
 
         close_message = str(
@@ -6449,6 +6465,22 @@ def _find_text_channel(channel_id):
     if not value.isdigit():
         return None
     channel = bot.get_channel(int(value))
+    return channel if isinstance(channel, discord.TextChannel) else None
+
+
+def _find_guild_text_channel(guild_id, channel_id):
+    """Return a text channel only if it belongs to the requested Discord guild."""
+    guild_value = str(guild_id or "").strip()
+    channel_value = str(channel_id or "").strip()
+
+    if not guild_value.isdigit() or not channel_value.isdigit():
+        return None
+
+    guild = bot.get_guild(int(guild_value))
+    if guild is None:
+        return None
+
+    channel = guild.get_channel(int(channel_value))
     return channel if isinstance(channel, discord.TextChannel) else None
 
 
@@ -8283,49 +8315,106 @@ async def before_deadside_killfeed_loop():
 
 async def apply_dashboard_feature(feature, guild_id=None):
     if feature == "dayz":
-        servers = _dz_servers()
-        enabled = [cfg for cfg in servers.values() if isinstance(cfg, dict) and cfg.get("enabled")]
-        for config in enabled:
+        if not str(guild_id or "").isdigit():
+            raise RuntimeError("A valid Discord server is required.")
+
+        config = _dz_servers().get(str(guild_id))
+        if not isinstance(config, dict):
+            raise RuntimeError("No DayZ settings are saved for this Discord server.")
+
+        if config.get("enabled"):
             await asyncio.to_thread(_dz_test_nitrado, config)
             await asyncio.to_thread(_dz_fetch_log, config)
-        if enabled and not dayz_log_loop.is_running():
-            dayz_log_loop.start()
-        return {"message": f"DayZ configured for {len(enabled)} server(s)"}
+
+            if not dayz_log_loop.is_running():
+                dayz_log_loop.start()
+
+            return {
+                "message": (
+                    "DayZ settings validated and published for "
+                    f"{bot.get_guild(int(guild_id)).name if bot.get_guild(int(guild_id)) else guild_id}"
+                )
+            }
+
+        return {"message": "DayZ settings saved for this server (integration disabled)."}
 
     if feature == "deadside":
-        servers = _deadside_servers()
-        enabled = [cfg for cfg in servers.values() if isinstance(cfg, dict) and cfg.get("enabled")]
-        for config in enabled:
-            if not _find_text_channel(config.get("killfeed_channel")):
-                raise RuntimeError("Choose a valid Deadside killfeed channel.")
-            if config.get("leaderboard_enabled", True) and not _find_text_channel(config.get("leaderboard_channel")):
-                raise RuntimeError("Choose a valid Deadside leaderboard channel or disable leaderboards.")
-            protocol = str(config.get("protocol") or config.get("connection_method") or "ftp").lower()
-            if protocol in {"ftp", "ftps", "sftp"}:
-                required = ("host", "username", "password")
-                missing = [field for field in required if not str(config.get(field, "")).strip()]
-                if missing:
-                    raise RuntimeError(f"Deadside {protocol.upper()} connection is missing: {', '.join(missing)}")
-                if not (_deadside_log_directory(config)):
-                    raise RuntimeError("Enter a Deadside log path or death logs directory.")
-            elif protocol in {"http", "https"}:
-                if not str(config.get("feed_url", "")).startswith(("http://", "https://")):
-                    raise RuntimeError("Enter a valid HTTP(S) Deadside log feed URL.")
-            else:
-                raise RuntimeError("Choose FTP, FTPS, SFTP or HTTP(S) as the protocol.")
-            # Validate connection now so dashboard reports configuration errors immediately.
-            raw = await asyncio.to_thread(_deadside_fetch_sync, config)
-            _deadside_parse_events(raw, config)
-        if enabled and not deadside_killfeed_loop.is_running():
+        if not str(guild_id or "").isdigit():
+            raise RuntimeError("A valid Discord server is required.")
+
+        config = _deadside_servers().get(str(guild_id))
+        if not isinstance(config, dict):
+            raise RuntimeError("No Deadside settings are saved for this Discord server.")
+
+        if not config.get("enabled"):
+            return {"message": "Deadside settings saved for this server (integration disabled)."}
+
+        if not _find_guild_text_channel(guild_id, config.get("killfeed_channel")):
+            raise RuntimeError("Choose a valid Deadside killfeed channel in this Discord server.")
+
+        if (
+            config.get("leaderboard_enabled", True)
+            and not _find_guild_text_channel(guild_id, config.get("leaderboard_channel"))
+        ):
+            raise RuntimeError(
+                "Choose a valid Deadside leaderboard channel in this Discord server "
+                "or disable leaderboards."
+            )
+
+        protocol = str(
+            config.get("protocol")
+            or config.get("connection_method")
+            or "ftp"
+        ).lower()
+
+        if protocol in {"ftp", "ftps", "sftp"}:
+            required = ("host", "username", "password")
+            missing = [
+                field for field in required
+                if not str(config.get(field, "")).strip()
+            ]
+            if missing:
+                raise RuntimeError(
+                    f"Deadside {protocol.upper()} connection is missing: "
+                    f"{', '.join(missing)}"
+                )
+            if not _deadside_log_directory(config):
+                raise RuntimeError(
+                    "Enter a Deadside log path or death logs directory."
+                )
+
+        elif protocol in {"http", "https"}:
+            if not str(config.get("feed_url", "")).startswith(("http://", "https://")):
+                raise RuntimeError(
+                    "Enter a valid HTTP(S) Deadside log feed URL."
+                )
+        else:
+            raise RuntimeError(
+                "Choose FTP, FTPS, SFTP or HTTP(S) as the protocol."
+            )
+
+        raw = await asyncio.to_thread(
+            _deadside_fetch_sync,
+            config
+        )
+        _deadside_parse_events(raw, config)
+
+        if not deadside_killfeed_loop.is_running():
             deadside_killfeed_loop.start()
-        return {"message": f"Deadside killfeed configured for {len(enabled)} server(s)"}
+
+        return {
+            "message": (
+                "Deadside settings validated and published for "
+                f"{bot.get_guild(int(guild_id)).name if bot.get_guild(int(guild_id)) else guild_id}"
+            )
+        }
 
     if feature == "rules":
         data = _guild_feature_read(RULES_FILE, guild_id, {"menu": {}, "sections": {}})
         menu = data.setdefault("menu", {})
         if not data.get("sections"):
             raise RuntimeError("Add at least one rules section first.")
-        channel = _find_text_channel(menu.get("channel_id"))
+        channel = _find_guild_text_channel(guild_id, menu.get("channel_id"))
         if not channel:
             raise RuntimeError("Choose a valid rules channel.")
         embed = discord.Embed(
@@ -8342,7 +8431,7 @@ async def apply_dashboard_feature(feature, guild_id=None):
 
     if feature == "embeds":
         data = _guild_feature_read(EMBED_FILE, guild_id, {})
-        channel = _find_text_channel(data.get("channel_id"))
+        channel = _find_guild_text_channel(guild_id, data.get("channel_id"))
         if not channel: raise RuntimeError("Choose a valid embed channel.")
         embed = discord.Embed(
             title=data.get("title") or None,
@@ -8373,7 +8462,7 @@ async def apply_dashboard_feature(feature, guild_id=None):
                 "Choose a valid ticket panel channel."
             )
 
-        enabled_options = active_ticket_options()
+        enabled_options = active_ticket_options(guild_id)
 
         if not enabled_options:
             raise RuntimeError(
@@ -8427,9 +8516,9 @@ async def apply_dashboard_feature(feature, guild_id=None):
         ).lower()
 
         if selection_type == "dropdown":
-            ticket_view = TicketDropdownView()
+            ticket_view = TicketDropdownView(guild_id)
         else:
-            ticket_view = TicketButtonsView()
+            ticket_view = TicketButtonsView(guild_id)
 
         await _send_or_edit(
             channel,
@@ -8455,7 +8544,7 @@ async def apply_dashboard_feature(feature, guild_id=None):
 
     if feature == "reaction_roles":
         data = _guild_feature_read(REACTION_ROLE_FILE, guild_id, {"roles": []})
-        channel = _find_text_channel(data.get("channel_id"))
+        channel = _find_guild_text_channel(guild_id, data.get("channel_id"))
         if not channel: raise RuntimeError("Choose a valid reaction-role channel.")
         lines = ["React below to receive a role:"]
         for item in data.get("roles", []):
@@ -8472,7 +8561,7 @@ async def apply_dashboard_feature(feature, guild_id=None):
 
     if feature == "welcome":
         data = _guild_feature_read(WELCOME_FILE, guild_id, {})
-        channel = _find_text_channel(data.get("channel") or data.get("channel_id"))
+        channel = _find_guild_text_channel(guild_id, data.get("channel") or data.get("channel_id"))
         if not channel: raise RuntimeError("Choose a valid welcome channel.")
         data["guild_id"] = str(channel.guild.id)
         preview = str(data.get("message", "Welcome {user} to {server}!"))
@@ -8486,7 +8575,7 @@ async def apply_dashboard_feature(feature, guild_id=None):
 
     if feature == "moderation":
         data = _guild_feature_read(MODERATION_FILE, guild_id, {})
-        channel = _find_text_channel(data.get("log_channel"))
+        channel = _find_guild_text_channel(guild_id, data.get("log_channel"))
         if not channel: raise RuntimeError("Choose a valid moderation log channel.")
         automod = data.get("automod", {})
         description = (
@@ -8503,7 +8592,7 @@ async def apply_dashboard_feature(feature, guild_id=None):
 
     if feature == "polls":
         data = _guild_feature_read(POLL_FILE, guild_id, {})
-        channel = _find_text_channel(data.get("channel_id"))
+        channel = _find_guild_text_channel(guild_id, data.get("channel_id"))
         if not channel:
             raise RuntimeError("Choose a valid poll channel.")
 
@@ -8531,7 +8620,7 @@ async def apply_dashboard_feature(feature, guild_id=None):
 
     if feature == "giveaways":
         data = _guild_feature_read(GIVEAWAY_FILE, guild_id, {})
-        channel = _find_text_channel(data.get("channel_id"))
+        channel = _find_guild_text_channel(guild_id, data.get("channel_id"))
         if not channel:
             raise RuntimeError("Choose a valid giveaway channel.")
 
@@ -8579,7 +8668,16 @@ async def apply_dashboard_feature(feature, guild_id=None):
         return {"message": "Bot presence updated"}
 
     if feature == "economy":
-        return {"message": "Economy settings saved and will be used by configured commands"}
+        if not str(guild_id or "").isdigit():
+            raise RuntimeError("A valid Discord server is required.")
+        _guild_feature_read(ECONOMY_FILE, guild_id, {})
+        guild = bot.get_guild(int(guild_id))
+        return {
+            "message": (
+                "Economy settings saved for "
+                f"{guild.name if guild else guild_id}"
+            )
+        }
 
     return {"message": "Settings applied"}
 
@@ -9269,25 +9367,30 @@ async def on_ready():
         "_persistent_views_registered",
         False
     ):
-        bot.add_view(RulesMenuView())
+        for guild in bot.guilds:
+            bot.add_view(RulesMenuView(guild.id))
         bot.add_view(CloseTicketView())
 
-        ticket_data = load_ticket_settings()
+        # Register persistent ticket views separately for every Discord server.
+        # Guild-specific custom IDs prevent one server's ticket panel from
+        # reading another server's ticket options after a restart.
+        for guild in bot.guilds:
+            ticket_data = load_ticket_settings(guild.id)
 
-        selection_type = str(
-            ticket_data.get(
-                "selection_type",
-                "buttons"
-            )
-        ).lower()
+            selection_type = str(
+                ticket_data.get(
+                    "selection_type",
+                    "buttons"
+                )
+            ).lower()
 
-        enabled_options = active_ticket_options()
+            enabled_options = active_ticket_options(guild.id)
 
-        if enabled_options:
-            if selection_type == "dropdown":
-                bot.add_view(TicketDropdownView())
-            else:
-                bot.add_view(TicketButtonsView())
+            if enabled_options:
+                if selection_type == "dropdown":
+                    bot.add_view(TicketDropdownView(guild.id))
+                else:
+                    bot.add_view(TicketButtonsView(guild.id))
 
         bot._persistent_views_registered = True
 

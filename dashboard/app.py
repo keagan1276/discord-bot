@@ -116,7 +116,12 @@ def save_and_apply_feature(feature, settings):
 
 
 def apply_to_discord(feature):
-    return bot_api_post(f"/api/dashboard/apply/{feature}")
+    """Apply/publish only to the Discord server selected in the dashboard."""
+    guild_id = str(session.get("selected_guild_id", "")).strip()
+    return bot_api_post(
+        f"/api/dashboard/apply/{feature}",
+        {"guild_id": guild_id}
+    )
 
 
 BASE_FOLDER = os.path.dirname(os.path.abspath(__file__))
