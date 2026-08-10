@@ -1,5 +1,5 @@
 from flask import (
-    Flask, render_template, request, redirect, jsonify,
+    Flask, render_template, render_template_string, request, redirect, jsonify,
     session, abort, url_for, flash
 )
 
@@ -146,8 +146,27 @@ def inject_discord_selector_script(response):
         script = '<script src="/static/js/discord-selectors.js"></script>'
         if script not in html and "</body>" in html:
             html = html.replace("</body>", f"{script}</body>")
-            response.set_data(html)
-            response.headers["Content-Length"] = len(response.get_data())
+
+        feature_for_history = {
+            "/rules": "rules",
+            "/tickets": "tickets",
+            "/embeds": "embeds"
+        }.get(request.path)
+
+        if feature_for_history and "</body>" in html:
+            history_button = (
+                '<a href="/saved-versions/' + feature_for_history + '" '
+                'style="position:fixed;right:18px;bottom:18px;z-index:9999;'
+                'padding:10px 14px;border-radius:10px;background:#171717;'
+                'color:#fff;text-decoration:none;border:1px solid #555;'
+                'box-shadow:0 4px 16px rgba(0,0,0,.35)">'
+                '💾 Saved Versions</a>'
+            )
+            if '💾 Saved Versions' not in html:
+                html = html.replace("</body>", history_button + "</body>")
+
+        response.set_data(html)
+        response.headers["Content-Length"] = len(response.get_data())
     except (UnicodeDecodeError, RuntimeError):
         pass
 
@@ -687,6 +706,7 @@ ANNOUNCEMENTS_FILE = os.path.join(BASE_DIR,"auto_announcements.json")
 REMINDERS_FILE = os.path.join(BASE_DIR,"reminders.json")
 ROLE_MANAGER_FILE = os.path.join(BASE_DIR,"role_manager.json")
 LOGS_FILE = os.path.join(BASE_DIR, "logs.json")
+DASHBOARD_HISTORY_FILE = os.path.join(BASE_DIR, "dashboard_history.json")
 PERMISSIONS_FILE = os.path.join(BASE_DIR, "permission_manager.json")
 DEADSIDE_FILE = os.path.join(BASE_DIR, "deadside.json")
 DAYZ_FILE = os.path.join(BASE_DIR, "dayz.json")
@@ -704,6 +724,237 @@ def load_or_create_json(path, default):
             return data if isinstance(data, dict) else default.copy()
     except (OSError, json.JSONDecodeError):
         return default.copy()
+
+
+# =========================================================
+# SAVED DASHBOARD VERSIONS
+# =========================================================
+
+HISTORY_FEATURES = {"rules", "tickets", "embeds"}
+MAX_HISTORY_PER_FEATURE = 100
+
+
+def _history_root():
+    data = load_or_create_json(
+        DASHBOARD_HISTORY_FILE,
+        {"guilds": {}}
+    )
+    if not isinstance(data, dict):
+        data = {"guilds": {}}
+    data.setdefault("guilds", {})
+    return data
+
+
+def _save_history_root(data):
+    temporary_file = f"{DASHBOARD_HISTORY_FILE}.tmp"
+    with open(temporary_file, "w", encoding="utf-8") as file:
+        json.dump(data, file, indent=4, ensure_ascii=False)
+    os.replace(temporary_file, DASHBOARD_HISTORY_FILE)
+
+
+def save_dashboard_snapshot(feature, guild_id, payload, action="save"):
+    feature = str(feature).strip().lower()
+    guild_id = str(guild_id).strip()
+
+    if feature not in HISTORY_FEATURES or not guild_id:
+        return None
+
+    root = _history_root()
+    guilds = root.setdefault("guilds", {})
+    guild_history = guilds.setdefault(guild_id, {})
+    versions = guild_history.setdefault(feature, [])
+
+    if not isinstance(versions, list):
+        versions = []
+        guild_history[feature] = versions
+
+    snapshot = {
+        "id": secrets.token_hex(8),
+        "feature": feature,
+        "guild_id": guild_id,
+        "action": str(action or "save")[:50],
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "user_id": str((current_user() or {}).get("id", "")),
+        "username": (
+            (current_user() or {}).get("global_name")
+            or (current_user() or {}).get("username")
+            or "Unknown"
+        ),
+        "data": json.loads(json.dumps(payload))
+    }
+
+    versions.append(snapshot)
+
+    if len(versions) > MAX_HISTORY_PER_FEATURE:
+        guild_history[feature] = versions[-MAX_HISTORY_PER_FEATURE:]
+
+    _save_history_root(root)
+    return snapshot
+
+
+def get_dashboard_history(feature, guild_id):
+    root = _history_root()
+    versions = (
+        root.get("guilds", {})
+        .get(str(guild_id), {})
+        .get(str(feature), [])
+    )
+
+    if not isinstance(versions, list):
+        return []
+
+    return sorted(
+        versions,
+        key=lambda item: str(item.get("timestamp", "")),
+        reverse=True
+    )
+
+
+def get_dashboard_snapshot(feature, guild_id, snapshot_id):
+    for snapshot in get_dashboard_history(feature, guild_id):
+        if str(snapshot.get("id")) == str(snapshot_id):
+            return snapshot
+    return None
+
+
+def _feature_file(feature):
+    return {
+        "rules": RULES_FILE,
+        "tickets": TICKET_FILE,
+        "embeds": EMBED_FILE
+    }.get(feature)
+
+
+def _history_feature_label(feature):
+    return {
+        "rules": "Rules",
+        "tickets": "Tickets",
+        "embeds": "Embeds"
+    }.get(feature, feature.title())
+
+
+@app.route("/saved-versions/<feature>")
+@login_required
+def saved_versions(feature):
+    feature = str(feature).strip().lower()
+
+    if feature not in HISTORY_FEATURES:
+        abort(404)
+
+    guild_id = str(session.get("selected_guild_id", "")).strip()
+    if not guild_id:
+        return redirect(url_for("servers"))
+
+    versions = get_dashboard_history(feature, guild_id)
+
+    return render_template_string(
+        """
+        {% extends "base.html" %}
+        {% block content %}
+        <div class="dashboard-page">
+            <section class="deadside-panel">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+                    <div>
+                        <h1>💾 {{ label }} Saved Versions</h1>
+                        <p>Every saved change is kept here so you can restore an older copy at any time.</p>
+                    </div>
+                    <a class="button" href="{{ url_for(feature) }}">← Back to {{ label }}</a>
+                </div>
+            </section>
+
+            <section class="deadside-panel">
+                {% if versions %}
+                    {% for version in versions %}
+                    <div class="dayz-list-row" style="align-items:flex-start;">
+                        <div>
+                            <strong>{{ version.timestamp }}</strong>
+                            <div>{{ version.action }} • {{ version.username }}</div>
+                            <small>ID: {{ version.id }}</small>
+                        </div>
+                        <form method="post" action="{{ url_for('restore_saved_version', feature=feature, snapshot_id=version.id) }}">
+                            <button type="submit">Restore this version</button>
+                        </form>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <p>No saved versions yet. Save changes on the {{ label }} page and they will appear here.</p>
+                {% endif %}
+            </section>
+        </div>
+        {% endblock %}
+        """,
+        versions=versions,
+        feature=feature,
+        label=_history_feature_label(feature)
+    )
+
+
+@app.route(
+    "/saved-versions/<feature>/restore/<snapshot_id>",
+    methods=["POST"]
+)
+@login_required
+def restore_saved_version(feature, snapshot_id):
+    feature = str(feature).strip().lower()
+
+    if feature not in HISTORY_FEATURES:
+        abort(404)
+
+    guild_id = str(session.get("selected_guild_id", "")).strip()
+    if not guild_id:
+        return redirect(url_for("servers"))
+
+    snapshot = get_dashboard_snapshot(
+        feature,
+        guild_id,
+        snapshot_id
+    )
+
+    if not snapshot:
+        flash("That saved version could not be found.", "warning")
+        return redirect(url_for("saved_versions", feature=feature))
+
+    target_file = _feature_file(feature)
+    if not target_file:
+        abort(404)
+
+    # Save the current version before replacing it.
+    current_data = load_or_create_json(target_file, {})
+    save_dashboard_snapshot(
+        feature,
+        guild_id,
+        current_data,
+        action="automatic backup before restore"
+    )
+
+    restored = json.loads(json.dumps(snapshot.get("data", {})))
+
+    with open(target_file, "w", encoding="utf-8") as file:
+        json.dump(restored, file, indent=4, ensure_ascii=False)
+
+    apply_result = save_and_apply_feature(feature, restored)
+
+    if apply_result and apply_result.get("ok"):
+        save_dashboard_snapshot(
+            feature,
+            guild_id,
+            restored,
+            action=f"restored version {snapshot_id}"
+        )
+        flash(
+            f"{_history_feature_label(feature)} version restored and published.",
+            "success"
+        )
+    else:
+        flash(
+            "The version was restored locally, but Discord publishing failed: "
+            + str((apply_result or {}).get("error", "Unknown error")),
+            "warning"
+        )
+
+    return redirect(url_for(feature))
+
+
 
 
 @app.route("/")
@@ -943,6 +1194,14 @@ def tickets():
             option.pop("channel_prefix", None)
 
     if request.method == "POST":
+        guild_id = str(session.get("selected_guild_id", "")).strip()
+        save_dashboard_snapshot(
+            "tickets",
+            guild_id,
+            ticket,
+            action="before change"
+        )
+
         ticket["enabled"] = "enabled" in request.form
         ticket["guild_id"] = str(
             session.get("selected_guild_id", "")
@@ -1094,6 +1353,13 @@ def tickets():
                 indent=4,
                 ensure_ascii=False
             )
+
+        save_dashboard_snapshot(
+            "tickets",
+            str(session.get("selected_guild_id", "")).strip(),
+            ticket,
+            action="saved changes"
+        )
 
         apply_result = save_and_apply_feature("tickets", ticket)
 
@@ -2538,6 +2804,13 @@ def embeds():
 
 
     if request.method == "POST":
+        guild_id = str(session.get("selected_guild_id", "")).strip()
+        save_dashboard_snapshot(
+            "embeds",
+            guild_id,
+            embed,
+            action="before change"
+        )
 
         embed["enabled"] = "enabled" in request.form
 
@@ -2579,6 +2852,13 @@ def embeds():
 
         with open(EMBED_FILE, "w", encoding="utf-8") as file:
             json.dump(embed, file, indent=4)
+
+        save_dashboard_snapshot(
+            "embeds",
+            str(session.get("selected_guild_id", "")).strip(),
+            embed,
+            action="saved changes"
+        )
 
         apply_result = save_and_apply_feature("embeds", embed)
         if not apply_result.get("ok"):
@@ -2775,6 +3055,14 @@ def rules():
 
         action = request.form.get("action", "save")
 
+        guild_id = str(session.get("selected_guild_id", "")).strip()
+        save_dashboard_snapshot(
+            "rules",
+            guild_id,
+            rules_data,
+            action=f"before {action}"
+        )
+
         menu = rules_data.setdefault("menu", {})
         sections = rules_data.setdefault("sections", {})
 
@@ -2906,6 +3194,13 @@ def rules():
                 indent=4,
                 ensure_ascii=False
             )
+
+        save_dashboard_snapshot(
+            "rules",
+            str(session.get("selected_guild_id", "")).strip(),
+            rules_data,
+            action=f"saved {action}"
+        )
 
         save_and_apply_feature("rules", rules_data)
         return redirect("/rules")
